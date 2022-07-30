@@ -1,0 +1,2 @@
+astunparse==1.6.3
+frozendict==2.3.4
