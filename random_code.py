@@ -326,7 +326,17 @@ class RandomizingTransformer(NodeTransformer):
             return True
 
         if node_type == "Name":
-            return proposed_swap.id in self.scope
+            if node_.id not in self.scope:
+                # If the original is out of scope, only expect the new one to be in scope
+                # No need to type match
+                return proposed_swap.id in self.scope
+
+            type_to_match = self.scope[node_.id]
+
+            return (
+                proposed_swap.id in self.scope
+                and self.scope[proposed_swap.id] == type_to_match
+            )
 
         # TODO(buck): un-ignore op types, swap op types
 
@@ -404,14 +414,21 @@ class RandomizingTransformer(NodeTransformer):
                     self.scope[next_arg.arg] = "Arg"
 
             if node_name == "FunctionDef":
-                # TODO(buck): Typing?
+                # TODO(buck): Typing a FunctionDef would enable swapping a function call for a value
                 self.scope[swapout.name] = "FunctionDef"
                 self.scope = self.scope.new_child()
                 args = self.args_to_names(swapout.args)
 
                 for arg in args:
-                    # TODO(buck) add typing info
-                    self.scope[arg.arg] = "Arg"
+                    # TODO(buck) add Typing info
+                    type_ = "Any"
+                    if arg.annotation is not None:
+                        type_ = arg.annotation.id
+                    elif arg.type_comment is not None:
+                        # TODO(buck): check this code path
+                        type_ = arg.type_comment.id
+                        1 / 0
+                    self.scope[arg.arg] = type_
 
             result = self._post_visit(swapout)
 
