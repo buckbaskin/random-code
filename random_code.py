@@ -1,12 +1,37 @@
 from ast import (
     AST,
+    Attribute,
+    BinOp,
+    BoolOp,
+    Call,
+    Compare,
+    Constant,
+    Dict,
+    DictComp,
     dump,
+    Expr,
     fix_missing_locations,
     FunctionDef,
+    GeneratorExp,
+    IfExp,
+    JoinedStr,
+    Lambda,
+    List,
+    ListComp,
     Module,
+    Name,
     NodeTransformer,
     NodeVisitor,
     parse,
+    Return,
+    Set,
+    SetComp,
+    Starred,
+    Subscript,
+    Tuple,
+    UnaryOp,
+    With,
+    Yield,
 )
 
 try:
@@ -16,14 +41,16 @@ except ImportError:
     # before python3.9's ast.unparse
     from astunparse import unparse as ast_unparse
 
+import code
+
 from collections import defaultdict, ChainMap
-from typing import List, Dict
+from typing import List as tList, Dict as tDict
 from frozendict import frozendict
 from random import Random
 
 from pprint import pprint
 
-UnbundledElementsType = Dict[str, Dict[str, List[AST]]]
+UnbundledElementsType = tDict[str, tDict[str, tList[AST]]]
 
 
 class UnbundlingVisitor(NodeVisitor):
@@ -240,7 +267,7 @@ def unbundle_ast(ast: AST):
     return result
 
 
-def merge_unbundled_asts(asts: List[UnbundledElementsType]):
+def merge_unbundled_asts(asts: tList[UnbundledElementsType]):
     unbundled = {}
 
     for _map in asts:
@@ -301,7 +328,9 @@ class RandomizingTransformer(NodeTransformer):
         self.missed_children = set()
 
         # This is where the craziness begins
-        self.scope = ChainMap()
+        self.scope = ChainMap({"tuple": "Type", "dict": "Type"})
+        # TODO(buck): Check to make sure we're not rejecting builtins
+        self.out_of_scope = set()
 
         self.visited = set(corpus.corpus.keys())
         self.ignore = ["Module"]
@@ -315,19 +344,189 @@ class RandomizingTransformer(NodeTransformer):
             name = "visit_%s" % (k,)
             setattr(self, name, self._ignore_function_factory(k))
 
+    def nested_unpack(self, element, top_level=None):
+        # TODO(buck): Make this a while loop with controlled depth
+        if element is None:
+            return []
+
+        if isinstance(element, Name):
+            return [element.id]
+        elif isinstance(element, Constant):
+            return []
+        elif isinstance(element, Attribute):
+            return self.nested_unpack(element.value, top_level)
+        elif hasattr(element, "func"):
+            return self.nested_unpack(element.func, top_level)
+        elif isinstance(element, Lambda):
+            # TODO(buck): check underlying
+            return []
+        elif isinstance(element, List):
+            # TODO(buck): check underlying
+            return []
+        elif isinstance(element, Tuple):
+            # TODO(buck): check underlying
+            return []
+        elif isinstance(element, Starred):
+            return self.nested_unpack(element.value, top_level)
+        elif isinstance(element, Subscript):
+            return self.nested_unpack(element.value, top_level)
+        elif isinstance(element, IfExp):
+            # Note: the body, orelse can be undefined depending on the result of the test, so taking the less strict approach here
+            return self.nested_unpack(element.test, top_level)
+        elif isinstance(element, UnaryOp):
+            return self.nested_unpack(element.operand, top_level)
+        elif isinstance(element, BinOp):
+            return [
+                *self.nested_unpack(element.left, top_level),
+                *self.nested_unpack(element.right, top_level),
+            ]
+        elif isinstance(element, BoolOp):
+
+            def flattened_BoolOp():
+                for v in element.values:
+                    for vid in self.nested_unpack(v, top_level):
+                        yield v
+
+            return list(flattened_BoolOp())
+        elif isinstance(element, Compare):
+
+            def flattened_Compare():
+                for lid in self.nested_unpack(element.left, top_level):
+                    yield lid
+                for comparator in element.comparators:
+                    for cid in self.nested_unpack(comparator, top_level):
+                        yield cid
+
+            return list(flattened_Compare())
+
+        elif isinstance(element, Dict):
+
+            def flattened_Dict():
+                for k in element.keys:
+                    for kid in self.nested_unpack(k, top_level):
+                        yield kid
+                for v in element.values:
+                    for vid in self.nested_unpack(v, top_level):
+                        yield vid
+
+            return list(flattened_Dict())
+        elif isinstance(element, Set):
+
+            def flattened_Set():
+                for k in element.elts:
+                    for kid in self.nested_unpack(k, top_level):
+                        yield kid
+
+            return list(flattened_Set())
+        elif isinstance(element, JoinedStr):
+            return []
+        elif isinstance(element, GeneratorExp):
+
+            def flattened_GeneratorExp():
+                for elt_id in self.nested_unpack(element.elt, top_level):
+                    yield elt_id
+
+                for gen in element.generators:
+                    for if_ in gen.ifs:
+                        for ifid in self.nested_unpack(if_, top_level):
+                            yield ifid
+                    for iid in self.nested_unpack(gen.iter, top_level):
+                        yield iid
+
+            return list(flattened_GeneratorExp())
+        elif isinstance(element, ListComp):
+
+            # TODO(buck): Combine GeneratorExp, ListComp impl
+            def flattened_ListComp():
+                for elt_id in self.nested_unpack(element.elt, top_level):
+                    yield elt_id
+
+                for gen in element.generators:
+                    for if_ in gen.ifs:
+                        for ifid in self.nested_unpack(if_, top_level):
+                            yield ifid
+                    for iid in self.nested_unpack(gen.iter, top_level):
+                        yield iid
+
+            return list(flattened_ListComp())
+        elif isinstance(element, DictComp):
+
+            def flattened_DictComp():
+                # TODO(buck): check key, value
+                for gen in element.generators:
+                    for if_ in gen.ifs:
+                        for ifid in self.nested_unpack(if_, top_level):
+                            yield ifid
+                    for iid in self.nested_unpack(gen.iter, top_level):
+                        yield iid
+
+            return list(flattened_DictComp())
+        elif isinstance(element, SetComp):
+
+            # TODO(buck): Combine GeneratorExp, SetComp impl
+            def flattened_SetComp():
+                for elt_id in self.nested_unpack(element.elt, top_level):
+                    yield elt_id
+
+                for gen in element.generators:
+                    for if_ in gen.ifs:
+                        for ifid in self.nested_unpack(if_, top_level):
+                            yield ifid
+                    for iid in self.nested_unpack(gen.iter, top_level):
+                        yield iid
+
+            return list(flattened_SetComp())
+        elif isinstance(element, Yield) or isinstance(element, Return):
+            return self.nested_unpack(element.value, top_level)
+        elif isinstance(element, Expr):
+            return self.nested_unpack(element.value, top_level)
+        else:
+            print("args unpacking?")
+            if top_level is not None:
+                print("Top Level")
+                print(top_level)
+                print(ast_unparse(top_level))
+                print("Element")
+            print(element)
+            print(ast_unparse(element))
+            code.interact(local=dict(ChainMap({"ast_unparse": ast_unparse}, locals())))
+            1 / 0
+
     def valid_swap(self, node_, proposed_swap):
+        # TODO(buck): check for mixed usage of node_, proposed_swap
         node_type = type(node_).__name__
-        new_definitions = ["Module", "FunctionDef", "arguments"]
+        new_definitions = ["Module", "FunctionDef", "arguments", "Assign", "Lambda"]
         if node_type in new_definitions:
             return True
 
-        i_know_its_wrong = ["alias"]
+        i_know_its_wrong = ["alias", "ImportFrom"]
         # TODO(buck) Revisit alias when I'm ready to inspect modules
         if node_type in i_know_its_wrong:
             return True
 
-        builtins = ["If", "Compare", "Return", "BinOp", "Expr", "ImportFrom"]
-        if node_type in builtins:
+        trivial = ["JoinedStr", "Constant", "FormattedValue"]
+        # e.g. '''abc''' '''def'''
+        # e.g. 1
+        # e.g. {world!s} in 'Hello {world!s}'
+        # TODO(buck): Check FormattedValue
+        if node_type in trivial:
+            return True
+
+        check_the_name = [
+            "Attribute",
+            "With",
+            "Return",
+            "Yield",
+            "If",
+            "Compare",
+            "Expr",
+        ]
+        if node_type in check_the_name:
+            names_to_check = self.nested_unpack(proposed_swap)
+            for name in names_to_check:
+                if name not in self.scope:
+                    self.out_of_scope.add(name)
+                    return False
             return True
 
         if node_type == "arg":
@@ -337,7 +536,11 @@ class RandomizingTransformer(NodeTransformer):
             return True
 
         if node_type == "Name":
+            if proposed_swap.id not in self.scope:
+                self.out_of_scope.add(proposed_swap.id)
+
             if node_.id not in self.scope:
+                self.out_of_scope.add(node_.id)
                 # If the original is out of scope, only expect the new one to be in scope
                 # No need to type match
                 return proposed_swap.id in self.scope
@@ -353,16 +556,33 @@ class RandomizingTransformer(NodeTransformer):
         # TODO(buck): Allow swapping import, import from
 
         if node_type == "Call":
-            names_to_check = [node_.func.id]
-            if len(node_.args) > 0:
-                # TODO(buck): Implement this case
-                1 / 0
-            if len(node_.keywords) > 0:
-                # TODO(buck): Implement this case
-                1 / 0
+            names_to_check = []
+
+            names_to_check.extend(self.nested_unpack(proposed_swap.func, proposed_swap))
+            if len(proposed_swap.args) > 0:
+                for a in proposed_swap.args:
+                    names_to_check.extend(self.nested_unpack(a, proposed_swap))
+            if len(proposed_swap.keywords) > 0:
+                for k in proposed_swap.keywords:
+                    arg_value = k.value
+                    names_to_check.extend(self.nested_unpack(arg_value, proposed_swap))
+
+            try:
+                pass
+                # assert len(names_to_check) > 0
+                # Counter Example: 'a b c'.split()
+            except AssertionError:
+                print("Failed to find names to check")
+                print(proposed_swap)
+                print(ast_unparse(proposed_swap))
+                code.interact(
+                    local=dict(ChainMap({"ast_unparse": ast_unparse}, locals()))
+                )
+                raise
 
             for name in names_to_check:
                 if name not in self.scope:
+                    self.out_of_scope.add(name)
                     return False
 
             return True
@@ -371,21 +591,29 @@ class RandomizingTransformer(NodeTransformer):
             # TODO(buck): Or match on Load/etc context ctx
             1 / 0
 
-        if node_type == "Assign":
-            1 / 0  # TODO(buck): Start here
-
         # TODO(buck): Start with name resolution
         # TODO(buck): Move to type-aware?
 
         print("ERR I don't know how to swap %s with scope" % (node_type,))
         print(node_._fields)
         print("Trying")
-        print(ast_unparse(node_))
+        try:
+            print(ast_unparse(node_))
+        except AttributeError:
+            print("AttributeError unparsing %s" % (node_,))
         print("Swapping For")
-        print(ast_unparse(proposed_swap))
+        try:
+            print(ast_unparse(proposed_swap))
+        except AttributeError:
+            print("AttributeError unparsing %s" % (proposed_swap,))
+
         print("Scope")
         pprint(self.scope)
-        1 / 0
+
+        print(node_._fields)
+        print("Trying this interactive thing")
+        code.interact(local=dict(ChainMap({"ast_unparse": ast_unparse}, locals())))
+        1 / 0  # TODO(buck): Start here
 
     def args_to_names(self, arguments):
         args = [
@@ -428,6 +656,13 @@ class RandomizingTransformer(NodeTransformer):
                     # TODO type annotation available
                     self.scope[next_arg.arg] = "Arg"
 
+            # TODO(buck): Lambda
+            # TODO(buck): GeneratorExpressions
+            # TODO(buck): ListComps
+            # TODO(buck): DictComps
+            # TODO(buck): SetComps
+            # TODO(buck): With
+            # TODO(buck): check/sync with list of new def functionality
             if node_name == "FunctionDef":
                 # TODO(buck): Typing a FunctionDef would enable swapping a function call for a value
                 self.scope[swapout.name] = "FunctionDef"
@@ -498,7 +733,7 @@ def the_sauce(gen: BagOfConcepts, start: Module):
     return result
 
 
-def make_asts(corpus: List[str]):
+def make_asts(corpus: tList[str]):
     ast_set = {}
 
     syntax_errors = []
@@ -533,7 +768,7 @@ def find_files(directory: str):
 
 
 # todo: accept str or path
-def give_me_random_code(corpus: List[str]):
+def give_me_random_code(corpus: tList[str]):
     assert len(corpus) > 0
 
     ast_set = make_asts(corpus)
