@@ -16,7 +16,7 @@ except ImportError:
     # before python3.9's ast.unparse
     from astunparse import unparse as ast_unparse
 
-from collections import defaultdict
+from collections import defaultdict, ChainMap
 from typing import List, Dict
 from frozendict import frozendict
 from random import Random
@@ -300,6 +300,9 @@ class RandomizingTransformer(NodeTransformer):
         self.missed_parents = set()
         self.missed_children = set()
 
+        # This is where the craziness begins
+        self.scope = ChainMap()
+
         self.visited = set(corpus.corpus.keys())
         self.ignore = ["Module"]
 
@@ -313,21 +316,107 @@ class RandomizingTransformer(NodeTransformer):
             setattr(self, name, self._ignore_function_factory(k))
 
     def valid_swap(self, node_, proposed_swap):
-        # TODO(buck): Scan for a valid swap
+        node_type = type(node_).__name__
+        new_definitions = ["Module", "FunctionDef", "arguments"]
+        if node_type in new_definitions:
+            return True
+
+        builtins = ["If", "Compare", "Return", "BinOp", "Expr"]
+        if node_type in builtins:
+            return True
+
+        if node_type == "Name":
+            return proposed_swap.id in self.scope
+
+        # TODO(buck): un-ignore op types, swap op types
+
+        if node_type == "Call":
+            names_to_check = [node_.func.id]
+            if len(node_.args) > 0:
+                # TODO(buck): Implement this case
+                1 / 0
+            if len(node_.keywords) > 0:
+                # TODO(buck): Implement this case
+                1 / 0
+
+            for name in names_to_check:
+                if name not in self.scope:
+                    return False
+
+            return True
+
+            # TODO(buck): Either overwrite Load/etc context ctx
+            # TODO(buck): Or match on Load/etc context ctx
+            1 / 0
+
         # TODO(buck): Start with name resolution
         # TODO(buck): Move to type-aware?
-        return True
+
+        print("ERR I don't know how to swap %s with scope" % (node_type,))
+        print(node_._fields)
+        print("Trying")
+        print(ast_unparse(node_))
+        print("Swapping For")
+        print(ast_unparse(proposed_swap))
+        print("Scope")
+        pprint(self.scope)
+        1 / 0
+
+    def args_to_names(self, arguments):
+        args = [
+            *arguments.posonlyargs,
+            *arguments.args,
+            *arguments.kwonlyargs,
+        ]
+        if arguments.vararg is not None:
+            print(node_.args.vararg)
+            # TODO(add to list of args)
+            1 / 0
+        if arguments.kwarg is not None:
+            print(node_.args.kwarg)
+            # TODO(add to list of args)
+            1 / 0
+        return args
 
     def _helper_function_factory(self, node_name):
         def _visit_X(node_):
             if self.depth > self.max_depth:
                 return node_
 
+            # TODO(buck): Scan for a valid swap
             for swapout in getattr(self.corpus, node_name)():
                 if self.valid_swap(node_, swapout):
                     # Let python scoping drop this variable
                     break
+
+            if node_name == "arguments":
+                print(
+                    "Swapped arguments in Scope %s for %s"
+                    % (
+                        [a.arg for a in self.args_to_names(node_)],
+                        [a.arg for a in self.args_to_names(swapout)],
+                    )
+                )
+                for start_arg in self.args_to_names(node_):
+                    del self.scope[start_arg.arg]
+                for next_arg in self.args_to_names(swapout):
+                    # TODO type annotation available
+                    self.scope[next_arg.arg] = "Arg"
+
+            if node_name == "FunctionDef":
+                # TODO(buck): Typing?
+                self.scope[swapout.name] = "FunctionDef"
+                self.scope = self.scope.new_child()
+                args = self.args_to_names(swapout.args)
+
+                for arg in args:
+                    # TODO(buck) add typing info
+                    self.scope[arg.arg] = "Arg"
+
             result = self._post_visit(swapout)
+
+            if node_name == "FunctionDef":
+                self.scope = self.scope.parents
 
             if self.prettyprinter:
                 print(
@@ -353,7 +442,7 @@ class RandomizingTransformer(NodeTransformer):
 
     def _post_visit(self, node):
         if self.prettyprinter:
-            print(" " * self.depth + type(node).__name__)
+            print(" " * self.depth + type(node).__name__ + " " + str(self.scope))
 
         self.depth += 1
         result = NodeTransformer.generic_visit(self, node)
@@ -370,7 +459,7 @@ class RandomizingTransformer(NodeTransformer):
 
 
 def the_sauce(gen: BagOfConcepts, start: Module):
-    transformer = RandomizingTransformer(gen, prettyprinter=False)
+    transformer = RandomizingTransformer(gen, prettyprinter=True)
     result = transformer.visit(start)
     assert result is not None
     # result = fix_missing_locations(result)
