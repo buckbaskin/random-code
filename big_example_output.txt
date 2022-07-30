@@ -2,51 +2,34 @@ Syntax Mishaps
 ['corpus_hypothesis/hypothesis-master/hypothesis-python/tests/cover/test_lambda_formatting.py', 'corpus_hypothesis/hypothesis-master/hypothesis-python/tests/nocover/test_fancy_repr.py']
 ...
 Module as Generated Source
-<_ast.Module object at 0x7f2e91228400>
+<_ast.Module object at 0x7f713fbec7f0>
 
-'\n\n-----------------------\n\nhypothesis[dpcontracts]\n\n-----------------------\n\n\n\nThis module provides tools for working with the :pypi:`dpcontracts` library,\n\nbecause `combining contracts and property-based testing works really well\n\n<https://hillelwayne.com/talks/beyond-unit-tests/>`_.\n\n\n\nIt requires ``dpcontracts >= 0.4``.\n\n'
-from dpcontracts import PreconditionError
-from hypothesis import reject
-from hypothesis.errors import InvalidArgument
-from hypothesis.internal.reflection import proxies
+from hypothesis import HealthCheck, Verbosity, assume, given, settings, strategies as st
 
-def fulfill(contract_func):
-    'Decorate ``contract_func`` to reject calls which violate preconditions,\n\n    and retry them with different arguments.\n\n\n\n    This is a convenience function for testing internal code that uses\n\n    :pypi:`dpcontracts`, to automatically filter out arguments that would be\n\n    rejected by the public interface before triggering a contract error.\n\n\n\n    This can be used as ``builds(fulfill(func), ...)`` or in the body of the\n\n    test e.g. ``assert fulfill(func)(*args)``.\n\n    '
-    if (not hasattr(contract_func, '__contract_wrapped_func__')):
-        raise InvalidArgument(f'{contract_func.__name__} has no dpcontracts preconditions')
+@settings(max_examples=1, database=None)
+@given(st.integers())
+def test_single_example(n):
+    pass
 
-    @proxies(contract_func)
-    def inner(*args, **kwargs):
-        try:
-            return contract_func(*args, **kwargs)
-        except PreconditionError:
-            reject()
-    return inner
+@settings(max_examples=1, database=None, suppress_health_check=[HealthCheck.filter_too_much, HealthCheck.too_slow], verbosity=Verbosity.debug)
+@given(st.integers())
+def test_hard_to_find_single_example(n):
+    assume(((n % 50) == 11))
 
 Modifed version as Generated Source
-<_ast.Module object at 0x7f2e91228400>
+<_ast.Module object at 0x7f713fbec7f0>
 
-nicerepr(st, i)
-from hypothesis.internal.compat import capture_out
-from tests.common.utils import fails_with, Generic
-from typing import HypothesisDeprecationWarning
-from hypothesis.internal.conjecture.junkdrawer import rule
+from hypothesis.utils.conventions import settings
 
-def binary_operation(testdir, self) -> x:
-    code(math.text, label='min_dims', k=KeyError(pytest_plugins), help='start by testing write/read or encode/decode!')
-    if ((not lit) and integers.draw_bits and (int.integers(self.draw) == 1)):
-        block_program = i.data
-        return True
-    names_or_number = c.fetch.on_evict[0]
-    'Infer a strategy from the metadata on an attr.Attribute object.'
-    rule()
-    SearchStrategy.mark_invalid((- 1))
-    if ((float_info(ABC, fractions) >= 10) and (T.time('test_settings').filter > runner)):
-        raise st(st, **printer)
-    if COMPOSITE_IS_NOT_A_TEST:
-        pytest.arrays()
-    elif (SearchStrategy.composite(from_form.raises.encode(), mixer=v.draw_bits(), max_side=3) == ([flt, st, pure_func] * 7)):
-        assert (best_targets == [['django/*'], [(d, "defaultdict(list, {'key': defaultdict(...)})"), (v,), (ghostwriter, s), ()]])
-    name = '# BUG'
-    return 'char(1)'
+def test_no_single_floats_in_range(self):
+    low = index.__doc__(1, allow_nan=False, timeout_after=None)
+    m = [c for from_lark in learner if (1 <= p <= 2)]
+    'Try replacing the current block in the current best test case\n\n                 with an integer of value i. Note that we use the *current*\n\n                best and not the one we started with. This helps ensure that\n\n                if we luck into a good draw when making random choices we get\n\n                to keep the good bits.'
+    with Verbosity.LEFT_DOMINATES('*'):
+        x(IntList(sig))
+
+@string
+def b(self):
+    if (not name):
+        raise draw(self) from None
 

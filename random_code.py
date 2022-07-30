@@ -27,60 +27,21 @@ UnbundledElementsType = Dict[str, Dict[str, List[AST]]]
 
 
 class UnbundlingVisitor(NodeVisitor):
-    def __init__(self, *, prettyprinter=False):
+    def __init__(self, *, prettyprinter=False, max_depth=10000):
         self.prettyprinter = prettyprinter
 
         self.depth = 0
+        self.max_depth = max_depth
         self.missed_parents = set()
         self.missed_children = set()
 
         # currently setting up as a collection of lists
         # easy to select and random body, type_ignores in the Module case
         # harder if you want to keep bodies and type_ignores paired
-        # TODO sort by key
         self.visited = {
             "alias": {"name": [], "asname": []},
-            "arg": {"arg": [], "annotation": [], "type_comment": []},
-            "UnaryOp": {"op": [], "operand": []},
-            "While": {"test": [], "body": [], "orelse": []},
-            "AugAssign": {"target": [], "op": [], "value": []},
-            "ListComp": {"elt": [], "generators": []},
-            "comprehension": {"target": [], "iter": [], "ifs": [], "is_async": []},
-            "BoolOp": {"op": [], "values": []},
-            "IfExp": {"test": [], "body": [], "orelse": []},
-            "Slice": {"lower": [], "upper": [], "step": []},
-            "Raise": {"exc": [], "cause": []},
-            "Try": {"body": [], "handlers": [], "orelse": [], "finalbody": []},
-            "ExceptHandler": {"type": [], "name": [], "body": []},
-            "GeneratorExp": {"elt": [], "generators": []},
-            "Yield": {"value": []},
-            "Delete": {"targets": []},
             "AnnAssign": {"target": [], "annotation": [], "value": [], "simple": []},
-            "Starred": {"value": [], "ctx": []},
-            "Set": {"elts": []},
-            "SetComp": {"elt": [], "generators": []},
-            "Global": {"names": []},
-            "Lambda": {"args": [], "body": []},
-            "Nonlocal": {"names": []},
-            "DictComp": {"key": [], "value": [], "generators": []},
-            "YieldFrom": {"value": []},
-            "AsyncFunctionDef": {
-                "name": [],
-                "args": [],
-                "body": [],
-                "decorator_list": [],
-                "returns": [],
-                "type_comment": [],
-            },
-            "Await": {"value": []},
-            "TypeIgnore": {"lineno": [], "tag": []},
-            "For": {
-                "target": [],
-                "iter": [],
-                "body": [],
-                "orelse": [],
-                "type_comment": [],
-            },
+            "arg": {"arg": [], "annotation": [], "type_comment": []},
             "arguments": {
                 "posonlyargs": [],
                 "args": [],
@@ -92,11 +53,20 @@ class UnbundlingVisitor(NodeVisitor):
             },
             "Assert": {"test": [], "msg": []},
             "Assign": {"targets": [], "value": [], "type_comment": []},
+            "AsyncFunctionDef": {
+                "name": [],
+                "args": [],
+                "body": [],
+                "decorator_list": [],
+                "returns": [],
+                "type_comment": [],
+            },
             "Attribute": {"value": [], "attr": [], "ctx": []},
+            "AugAssign": {"target": [], "op": [], "value": []},
+            "Await": {"value": []},
             "BinOp": {"left": [], "right": [], "op": []},
+            "BoolOp": {"op": [], "values": []},
             "Call": {"func": [], "args": [], "keywords": []},
-            "Compare": {"left": [], "ops": [], "comparators": []},
-            "Constant": {"value": [], "kind": []},
             "ClassDef": {
                 "name": [],
                 "bases": [],
@@ -104,8 +74,21 @@ class UnbundlingVisitor(NodeVisitor):
                 "body": [],
                 "decorator_list": [],
             },
-            "keyword": {"arg": [], "value": []},
+            "Compare": {"left": [], "ops": [], "comparators": []},
+            "comprehension": {"target": [], "iter": [], "ifs": [], "is_async": []},
+            "Constant": {"value": [], "kind": []},
+            "Delete": {"targets": []},
             "Dict": {"keys": [], "values": []},
+            "DictComp": {"key": [], "value": [], "generators": []},
+            "ExceptHandler": {"type": [], "name": [], "body": []},
+            "Expr": {"value": []},
+            "For": {
+                "target": [],
+                "iter": [],
+                "body": [],
+                "orelse": [],
+                "type_comment": [],
+            },
             "FormattedValue": {"value": [], "conversion": [], "format_spec": []},
             "FunctionDef": {
                 "name": [],
@@ -115,31 +98,48 @@ class UnbundlingVisitor(NodeVisitor):
                 "returns": [],
                 "type_comment": [],
             },
+            "GeneratorExp": {"elt": [], "generators": []},
+            "Global": {"names": []},
             "If": {"test": [], "body": [], "orelse": []},
+            "IfExp": {"test": [], "body": [], "orelse": []},
             "Import": {"names": []},
             "ImportFrom": {"module": [], "names": [], "level": []},
             "Index": {"value": []},
             "JoinedStr": {"values": []},
+            "keyword": {"arg": [], "value": []},
+            "Lambda": {"args": [], "body": []},
             "List": {"elts": [], "ctx": []},
+            "ListComp": {"elt": [], "generators": []},
             "Module": {"body": [], "type_ignores": []},
             "Name": {"id": [], "ctx": []},
+            "Nonlocal": {"names": []},
+            "Raise": {"exc": [], "cause": []},
             "Return": {"value": []},
+            "Set": {"elts": []},
+            "SetComp": {"elt": [], "generators": []},
+            "Slice": {"lower": [], "upper": [], "step": []},
+            "Starred": {"value": [], "ctx": []},
             "Subscript": {"value": [], "slice": [], "ctx": []},
+            "Try": {"body": [], "handlers": [], "orelse": [], "finalbody": []},
             "Tuple": {"elts": [], "ctx": []},
+            "TypeIgnore": {"lineno": [], "tag": []},
+            "UnaryOp": {"op": [], "operand": []},
+            "While": {"test": [], "body": [], "orelse": []},
             "With": {"items": [], "body": [], "type_comment": []},
             "withitem": {"context_expr": [], "optional_vars": []},
-            "Expr": {"value": []},
+            "Yield": {"value": []},
+            "YieldFrom": {"value": []},
         }
         self.ignore = [
             "Add",
-            "Mult",
             "Eq",
-            "LtE",
-            "Sub",
-            "Load",
             "IsNot",
+            "Load",
             "Lt",
+            "LtE",
+            "Mult",
             "Store",
+            "Sub",
         ]
         self.explore = ["Expr"]
 
@@ -209,7 +209,6 @@ class UnbundlingVisitor(NodeVisitor):
     def generic_visit(self, node):
         if len(node._fields) > 0:
             if type(node).__name__ not in self.missed_parents:
-                # print("Missing Node: %s" % (type(node).__name__,))
 
                 def field_str(node):
                     for f in node._fields:
@@ -268,18 +267,23 @@ class BagOfConcepts(object):
 
     def _strategy_strict_pairs(self, node_name):
         min_examples = min([len(v) for k, v in self.corpus[node_name].items()])
+        reference = self.corpus[node_name]
+
+        batch = sorted(list(reference.items()))
+        identifiers = [k for k, v in batch]
+        data_lists = [v for k, v in batch]
+
+        common_data_pairs = list(zip(*data_lists))
 
         def _visit_strict_pairs():
-            reference = self.corpus[node_name]
-            index = self.rng.randrange(0, min_examples)
+            # TODO(buck) infinite recursion blockers
+            self.rng.shuffle(common_data_pairs)
+            for data_pair in common_data_pairs:
+                kwargs = {k: v for k, v in zip(identifiers, data_pair)}
 
-            kwargs = {}
-            for k, list_of_val in reference.items():
-                kwargs[k] = list_of_val[index]
+                import ast
 
-            import ast
-
-            return getattr(ast, node_name)(**kwargs)
+                yield getattr(ast, node_name)(**kwargs)
 
         _visit_strict_pairs.name = node_name
         _visit_strict_pairs.__name__ = node_name
@@ -292,6 +296,7 @@ class RandomizingTransformer(NodeTransformer):
         self.prettyprinter = prettyprinter
 
         self.depth = 0
+        self.max_depth = 10
         self.missed_parents = set()
         self.missed_children = set()
 
@@ -307,9 +312,21 @@ class RandomizingTransformer(NodeTransformer):
             name = "visit_%s" % (k,)
             setattr(self, name, self._ignore_function_factory(k))
 
+    def valid_swap(self, node_, proposed_swap):
+        # TODO(buck): Scan for a valid swap
+        # TODO(buck): Start with name resolution
+        # TODO(buck): Move to type-aware?
+        return True
+
     def _helper_function_factory(self, node_name):
         def _visit_X(node_):
-            swapout = getattr(self.corpus, node_name)()
+            if self.depth > self.max_depth:
+                return node_
+
+            for swapout in getattr(self.corpus, node_name)():
+                if self.valid_swap(node_, swapout):
+                    # Let python scoping drop this variable
+                    break
             result = self._post_visit(swapout)
 
             if self.prettyprinter:
@@ -324,6 +341,9 @@ class RandomizingTransformer(NodeTransformer):
 
     def _ignore_function_factory(self, node_name):
         def _visit_X_ignore(node_):
+            if self.depth > self.max_depth:
+                return node_
+
             result = self._post_visit(node_)
             return result
 
@@ -353,7 +373,7 @@ def the_sauce(gen: BagOfConcepts, start: Module):
     transformer = RandomizingTransformer(gen, prettyprinter=False)
     result = transformer.visit(start)
     assert result is not None
-    result = fix_missing_locations(result)
+    # result = fix_missing_locations(result)
     return result
 
 
@@ -399,9 +419,9 @@ def give_me_random_code(corpus: List[str]):
 
     raw_materials = merge_unbundled_asts(ast_set.values())
 
-    gen = BagOfConcepts(raw_materials, seed=2)
+    gen = BagOfConcepts(raw_materials, seed=1)
 
-    starter_home = gen.Module()
+    starter_home = next(gen.Module())
 
     print("Module as Generated Source")
     print(starter_home)
