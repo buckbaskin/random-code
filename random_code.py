@@ -321,8 +321,19 @@ class RandomizingTransformer(NodeTransformer):
         if node_type in new_definitions:
             return True
 
-        builtins = ["If", "Compare", "Return", "BinOp", "Expr"]
+        i_know_its_wrong = ["alias"]
+        # TODO(buck) Revisit alias when I'm ready to inspect modules
+        if node_type in i_know_its_wrong:
+            return True
+
+        builtins = ["If", "Compare", "Return", "BinOp", "Expr", "ImportFrom"]
         if node_type in builtins:
+            return True
+
+        if node_type == "arg":
+            if node_.arg == "self" or proposed_swap.arg == "self":
+                # Heuristic because self has special usage
+                return False
             return True
 
         if node_type == "Name":
@@ -339,6 +350,7 @@ class RandomizingTransformer(NodeTransformer):
             )
 
         # TODO(buck): un-ignore op types, swap op types
+        # TODO(buck): Allow swapping import, import from
 
         if node_type == "Call":
             names_to_check = [node_.func.id]
@@ -358,6 +370,9 @@ class RandomizingTransformer(NodeTransformer):
             # TODO(buck): Either overwrite Load/etc context ctx
             # TODO(buck): Or match on Load/etc context ctx
             1 / 0
+
+        if node_type == "Assign":
+            1 / 0  # TODO(buck): Start here
 
         # TODO(buck): Start with name resolution
         # TODO(buck): Move to type-aware?
