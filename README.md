@@ -12,8 +12,7 @@ Generated with script `big_example.py` from hypothesis https://github.com/Hypoth
 
 ### Starter Module as Generated Source
 
-<_ast.Module object at 0x7f2e91228400>
-
+```python
 '\n\n-----------------------\n\nhypothesis[dpcontracts]\n\n-----------------------\n\n\n\nThis module provides tools for working with the :pypi:`dpcontracts` library,\n\nbecause `combining contracts and property-based testing works really well\n\n<https://hillelwayne.com/talks/beyond-unit-tests/>`_.\n\n\n\nIt requires ``dpcontracts >= 0.4``.\n\n'
 from dpcontracts import PreconditionError
 from hypothesis import reject
@@ -32,11 +31,11 @@ def fulfill(contract_func):
         except PreconditionError:
             reject()
     return inner
+```
 
 ### Modifed Version as Generated Source
 
-<_ast.Module object at 0x7f2e91228400>
-
+```python
 nicerepr(st, i)
 from hypothesis.internal.compat import capture_out
 from tests.common.utils import fails_with, Generic
@@ -60,4 +59,4 @@ def binary_operation(testdir, self) -> x:
         assert (best_targets == [['django/*'], [(d, "defaultdict(list, {'key': defaultdict(...)})"), (v,), (ghostwriter, s), ()]])
     name = '# BUG'
     return 'char(1)'
-
+```
