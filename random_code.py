@@ -37,16 +37,50 @@ class UnbundlingVisitor(NodeVisitor):
         # currently setting up as a collection of lists
         # easy to select and random body, type_ignores in the Module case
         # harder if you want to keep bodies and type_ignores paired
+        # TODO sort by key
         self.visited = {
-            "Module": {"body": [], "type_ignores": []},
-            "BinOp": {"left": [], "right": [], "op": []},
-            "Constant": {"value": [], "kind": []},
-            "Compare": {"left": [], "ops": [], "comparators": []},
-            "Name": {"id": [], "ctx": []},
-            "Call": {"func": [], "args": [], "keywords": []},
-            "Return": {"value": []},
-            "If": {"test": [], "body": [], "orelse": []},
+            "alias": {"name": [], "asname": []},
             "arg": {"arg": [], "annotation": [], "type_comment": []},
+            "UnaryOp": {"op": [], "operand": []},
+            "While": {"test": [], "body": [], "orelse": []},
+            "AugAssign": {"target": [], "op": [], "value": []},
+            "ListComp": {"elt": [], "generators": []},
+            "comprehension": {"target": [], "iter": [], "ifs": [], "is_async": []},
+            "BoolOp": {"op": [], "values": []},
+            "IfExp": {"test": [], "body": [], "orelse": []},
+            "Slice": {"lower": [], "upper": [], "step": []},
+            "Raise": {"exc": [], "cause": []},
+            "Try": {"body": [], "handlers": [], "orelse": [], "finalbody": []},
+            "ExceptHandler": {"type": [], "name": [], "body": []},
+            "GeneratorExp": {"elt": [], "generators": []},
+            "Yield": {"value": []},
+            "Delete": {"targets": []},
+            "AnnAssign": {"target": [], "annotation": [], "value": [], "simple": []},
+            "Starred": {"value": [], "ctx": []},
+            "Set": {"elts": []},
+            "SetComp": {"elt": [], "generators": []},
+            "Global": {"names": []},
+            "Lambda": {"args": [], "body": []},
+            "Nonlocal": {"names": []},
+            "DictComp": {"key": [], "value": [], "generators": []},
+            "YieldFrom": {"value": []},
+            "AsyncFunctionDef": {
+                "name": [],
+                "args": [],
+                "body": [],
+                "decorator_list": [],
+                "returns": [],
+                "type_comment": [],
+            },
+            "Await": {"value": []},
+            "TypeIgnore": {"lineno": [], "tag": []},
+            "For": {
+                "target": [],
+                "iter": [],
+                "body": [],
+                "orelse": [],
+                "type_comment": [],
+            },
             "arguments": {
                 "posonlyargs": [],
                 "args": [],
@@ -56,6 +90,23 @@ class UnbundlingVisitor(NodeVisitor):
                 "kwarg": [],
                 "defaults": [],
             },
+            "Assert": {"test": [], "msg": []},
+            "Assign": {"targets": [], "value": [], "type_comment": []},
+            "Attribute": {"value": [], "attr": [], "ctx": []},
+            "BinOp": {"left": [], "right": [], "op": []},
+            "Call": {"func": [], "args": [], "keywords": []},
+            "Compare": {"left": [], "ops": [], "comparators": []},
+            "Constant": {"value": [], "kind": []},
+            "ClassDef": {
+                "name": [],
+                "bases": [],
+                "keywords": [],
+                "body": [],
+                "decorator_list": [],
+            },
+            "keyword": {"arg": [], "value": []},
+            "Dict": {"keys": [], "values": []},
+            "FormattedValue": {"value": [], "conversion": [], "format_spec": []},
             "FunctionDef": {
                 "name": [],
                 "args": [],
@@ -64,9 +115,32 @@ class UnbundlingVisitor(NodeVisitor):
                 "returns": [],
                 "type_comment": [],
             },
+            "If": {"test": [], "body": [], "orelse": []},
+            "Import": {"names": []},
+            "ImportFrom": {"module": [], "names": [], "level": []},
+            "Index": {"value": []},
+            "JoinedStr": {"values": []},
+            "List": {"elts": [], "ctx": []},
+            "Module": {"body": [], "type_ignores": []},
+            "Name": {"id": [], "ctx": []},
+            "Return": {"value": []},
+            "Subscript": {"value": [], "slice": [], "ctx": []},
+            "Tuple": {"elts": [], "ctx": []},
+            "With": {"items": [], "body": [], "type_comment": []},
+            "withitem": {"context_expr": [], "optional_vars": []},
             "Expr": {"value": []},
         }
-        self.ignore = ["Add", "Mult", "Eq", "LtE", "Sub", "Load"]
+        self.ignore = [
+            "Add",
+            "Mult",
+            "Eq",
+            "LtE",
+            "Sub",
+            "Load",
+            "IsNot",
+            "Lt",
+            "Store",
+        ]
         self.explore = ["Expr"]
 
         for k in self.visited:
@@ -134,10 +208,17 @@ class UnbundlingVisitor(NodeVisitor):
 
     def generic_visit(self, node):
         if len(node._fields) > 0:
+            if type(node).__name__ not in self.missed_parents:
+                # print("Missing Node: %s" % (type(node).__name__,))
+
+                def field_str(node):
+                    for f in node._fields:
+                        yield '"%s": []' % (f,)
+
+                print('"%s": {%s},' % (type(node).__name__, ",".join(field_str(node))))
             self.missed_parents.add(type(node).__name__)
         else:
             self.missed_children.add(type(node).__name__)
-        assert len(self.missed_children) + len(self.missed_parents) == 0
 
         self._post_visit(node)
 
@@ -263,7 +344,7 @@ class RandomizingTransformer(NodeTransformer):
     def generic_visit(self, node):
         node_type_str = type(node).__name__
         name = "visit_%s" % (node_type_str,)
-        print("generic_visit: Providing default ignore case for %s" % (node_type_str,))
+        # print("generic_visit: Providing default ignore case for %s" % (node_type_str,))
         setattr(self, name, self._ignore_function_factory(node_type_str))
         return self._post_visit(node)
 
@@ -278,15 +359,36 @@ def the_sauce(gen: BagOfConcepts, start: Module):
 
 def make_asts(corpus: List[str]):
     ast_set = {}
+
+    syntax_errors = []
+
     for corpus_file_path in corpus:
         with open(corpus_file_path) as f:
             file_contents = []
             for line in f:
                 file_contents.append(line)
-            ast_set[corpus_file_path] = parse(
-                "\n".join(file_contents), corpus_file_path, type_comments=True
-            )
+            try:
+                ast_set[corpus_file_path] = parse(
+                    "\n".join(file_contents), corpus_file_path, type_comments=True
+                )
+            except SyntaxError:
+                syntax_errors.append(corpus_file_path)
+
+    if len(syntax_errors) > 0:
+        print("Syntax Mishaps")
+        print(syntax_errors[:5])
+        print("...")
+
     return ast_set
+
+
+def find_files(directory: str):
+    import os
+
+    for dirpath, dirnames, filenames in os.walk(directory):
+        for f in filenames:
+            if f.endswith(".py"):
+                yield os.path.join(dirpath, f)
 
 
 # todo: accept str or path
@@ -317,6 +419,8 @@ def give_me_random_code(corpus: List[str]):
 
 
 def main():
+    corpus_paths = list(find_files("corpus"))
+    print(corpus_paths)
     random_source = give_me_random_code(["corpus/int_functions.py", "corpus/main.py"])
 
 

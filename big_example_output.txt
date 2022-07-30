@@ -1,17 +1,7 @@
-# random-python
-
-Generate random Python from a corpus of examples
-
-The function `give_me_random_code` generates a new code example from a corpus
-
-The function uses something similar to Waveform Collapse (citation needed) to exchange subsets of examples from the corpus in a random fashion to arrive at new code blocks
-
-## Example Output
-
-Generated with script `big_example.py` from hypothesis https://github.com/HypothesisWorks/hypothesis/commit/b6633778e8687e64e039b050b792adab1135a17e
-
-### Starter Module as Generated Source
-
+Syntax Mishaps
+['corpus_hypothesis/hypothesis-master/hypothesis-python/tests/cover/test_lambda_formatting.py', 'corpus_hypothesis/hypothesis-master/hypothesis-python/tests/nocover/test_fancy_repr.py']
+...
+Module as Generated Source
 <_ast.Module object at 0x7f2e91228400>
 
 '\n\n-----------------------\n\nhypothesis[dpcontracts]\n\n-----------------------\n\n\n\nThis module provides tools for working with the :pypi:`dpcontracts` library,\n\nbecause `combining contracts and property-based testing works really well\n\n<https://hillelwayne.com/talks/beyond-unit-tests/>`_.\n\n\n\nIt requires ``dpcontracts >= 0.4``.\n\n'
@@ -33,8 +23,7 @@ def fulfill(contract_func):
             reject()
     return inner
 
-### Modifed Version as Generated Source
-
+Modifed version as Generated Source
 <_ast.Module object at 0x7f2e91228400>
 
 nicerepr(st, i)
