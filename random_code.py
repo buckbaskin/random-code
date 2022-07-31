@@ -1,5 +1,6 @@
 from ast import (
     Assert,
+    Break,
     withitem,
     While,
     Assign,
@@ -16,6 +17,7 @@ from ast import (
     DictComp,
     dump,
     Expr,
+    ExceptHandler,
     fix_missing_locations,
     For,
     FormattedValue,
@@ -435,7 +437,11 @@ class RandomizingTransformer(NodeTransformer):
 
         if isinstance(element, Name):
             return [element.id]
-        elif isinstance(element, Constant) or isinstance(element, Pass):
+        elif (
+            isinstance(element, Constant)
+            or isinstance(element, Pass)
+            or isinstance(element, Break)
+        ):
             return []
         elif isinstance(element, ImportFrom) or isinstance(element, Import):
             # TODO(buck): Maybe re-evaluate unpacking imports?
@@ -657,6 +663,16 @@ class RandomizingTransformer(NodeTransformer):
         elif isinstance(element, FormattedValue):
             # TODO(buck): Revisit FormattedValue expansion
             return []
+        elif isinstance(element, ExceptHandler):
+
+            def flattened_ExceptHandler():
+                for tid in self.nested_unpack(element.type, top_level):
+                    yield tid
+                for expr in element.body:
+                    for eid in self.nested_unpack(expr, top_level):
+                        yield eid
+
+            return list(flattened_ExceptHandler())
 
         else:
             print("args unpacking?")
@@ -764,12 +780,9 @@ class RandomizingTransformer(NodeTransformer):
             print(ast_unparse(arguments.vararg))
             # TODO(add to list of args)
             1 / 0
+            args.append(arguments.vararg)
         if arguments.kwarg is not None:
-            print("arguments.kwarg")
-            print(arguments.kwarg)
-            print(ast_unparse(arguments.kwarg))
-            # TODO(add to list of args)
-            1 / 0
+            args.append(arguments.kwarg)
         return args
 
     def _helper_function_factory(self, node_name):
@@ -784,13 +797,14 @@ class RandomizingTransformer(NodeTransformer):
                     break
 
             if node_name == "arguments":
-                print(
-                    "Swapped arguments in Scope %s for %s"
-                    % (
-                        [a.arg for a in self.args_to_names(node_)],
-                        [a.arg for a in self.args_to_names(swapout)],
+                if self.prettyprinter:
+                    print(
+                        "Swapped arguments in Scope %s for %s"
+                        % (
+                            [a.arg for a in self.args_to_names(node_)],
+                            [a.arg for a in self.args_to_names(swapout)],
+                        )
                     )
-                )
                 for start_arg in self.args_to_names(node_):
                     del self.scope[start_arg.arg]
                 for next_arg in self.args_to_names(swapout):
@@ -803,12 +817,14 @@ class RandomizingTransformer(NodeTransformer):
             # TODO(buck): Assignment
             # TODO(buck): DictComps
             # TODO(buck): SetComps
+            # TODO(buck): ExceptHandler
             # TODO(buck): With
             # TODO(buck): ClassDef
-            # TODO(buck): check/sync with list of new def functionality
+            # TODO(buck): check/sync scoping implementation with list of new def functionality
             if node_name == "FunctionDef":
                 # TODO(buck): Typing a FunctionDef would enable swapping a function call for a value
                 self.scope[swapout.name] = "FunctionDef"
+                # TODO(buck): Add helper for pushing a new scope, auto-popping after _post_visit
                 self.scope = self.scope.new_child()
                 args = self.args_to_names(swapout.args)
 
@@ -869,7 +885,7 @@ class RandomizingTransformer(NodeTransformer):
 
 
 def the_sauce(gen: BagOfConcepts, start: Module):
-    transformer = RandomizingTransformer(gen, prettyprinter=True)
+    transformer = RandomizingTransformer(gen, prettyprinter=False)
     result = transformer.visit(start)
     assert result is not None
     # result = fix_missing_locations(result)
