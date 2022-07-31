@@ -15,9 +15,9 @@ Things that Work:
 Things that maybe work:
 - [ ] Running the example script on an a big codebase
 - [ ] Check variable names are in scope
+- [ ] Tests that verify important functions
 
 Things that are planned to work in the future:
-- Tests that verify important functions
 - Exchange elements with elements of the exact same type, so the logic is likely useful
 - Exchange similar elements (e.g. import/import from, replacing an integer with a function that returns an integer)
 

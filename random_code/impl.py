@@ -852,7 +852,10 @@ class RandomizingTransformer(NodeTransformer):
                         1 / 0
                     self.scope[arg.arg] = type_
 
-            result = self._post_visit(swapout)
+            result = swapout
+            # TODO(buck): Remove carve-out for arg so we can explore replacing aspects of the arg once we have typing
+            if node_name not in ["arg"]:
+                result = self._post_visit(swapout)
 
             if node_name == "FunctionDef":
                 self.scope = self.scope.parents
@@ -897,8 +900,8 @@ class RandomizingTransformer(NodeTransformer):
         return self._post_visit(node)
 
 
-def the_sauce(gen: BagOfConcepts, start: Module):
-    transformer = RandomizingTransformer(gen, prettyprinter=False)
+def the_sauce(gen: BagOfConcepts, start: Module, *, prettyprinter=False):
+    transformer = RandomizingTransformer(gen, prettyprinter=prettyprinter)
     result = transformer.visit(start)
     assert result is not None
     # result = fix_missing_locations(result)
@@ -943,15 +946,17 @@ def find_files(directory: str):
 
 
 class RandomCodeSource(object):
-    def __init__(self, corpus: tList[str], seed=1):
+    def __init__(self, corpus: tList[str], seed=1, *, prettyprinter=False):
         assert len(corpus) > 0
+        self.prettyprinter = prettyprinter
+
         ast_set = make_asts(corpus)
         raw_materials = merge_unbundled_asts(ast_set.values())
         self.gen = BagOfConcepts(raw_materials, seed=seed)
 
     def next_source(self):
         starter_home = next(self.gen.Module())
-        result = the_sauce(self.gen, starter_home)
+        result = the_sauce(self.gen, starter_home, prettyprinter=self.prettyprinter)
         text_result = ast_unparse(result)
         return text_result
 

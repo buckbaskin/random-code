@@ -1,4 +1,2 @@
-def main(i: i):
+def main(i: int):
     return 1
-if (main <= 0):
-    main()
