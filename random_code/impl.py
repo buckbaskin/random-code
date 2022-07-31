@@ -1,13 +1,14 @@
 from ast import (
     Assert,
-    Break,
-    withitem,
-    While,
     Assign,
     AST,
+    AsyncFor,
+    AsyncFunctionDef,
+    AsyncWith,
     Attribute,
     BinOp,
     BoolOp,
+    Break,
     Call,
     ClassDef,
     Compare,
@@ -16,8 +17,8 @@ from ast import (
     Dict,
     DictComp,
     dump,
-    Expr,
     ExceptHandler,
+    Expr,
     fix_missing_locations,
     For,
     FormattedValue,
@@ -32,13 +33,13 @@ from ast import (
     keyword,
     Lambda,
     List,
-    Pass,
     ListComp,
     Module,
     Name,
     NodeTransformer,
     NodeVisitor,
     parse,
+    Pass,
     Raise,
     Return,
     Set,
@@ -48,7 +49,9 @@ from ast import (
     Try,
     Tuple,
     UnaryOp,
+    While,
     With,
+    withitem,
     Yield,
 )
 
@@ -121,17 +124,21 @@ except ImportError:
 import code
 import logging
 
-from collections import defaultdict, ChainMap
+from collections import defaultdict, ChainMap, deque
 from typing import List as tList, Dict as tDict
 from random import Random
 
 UnbundledElementsType = tDict[str, tDict[str, tList[AST]]]
 
 
+log = logging.getLogger(__name__)
+log.setLevel("WARN")
+
+
 class UnbundlingVisitor(NodeVisitor):
-    def __init__(self, *, max_depth=10000, log_level="WARN"):
-        self.log = logging.getLogger("UnbundlingVisitor")
-        self.log.setLevel(log_level)
+    def __init__(self, *, max_depth=10000, log_level=None):
+        if log_level is not None:
+            log.setLevel(log_level)
 
         self.depth = 0
         self.max_depth = max_depth
@@ -287,19 +294,17 @@ class UnbundlingVisitor(NodeVisitor):
         return _visit_X_explore
 
     def _post_visit(self, node):
-        self.log.info(" " * self.depth + type(node).__name__)
+        log.info(" " * self.depth + " Processed " + type(node).__name__)
         self.depth += 1
         NodeVisitor.generic_visit(self, node)
         self.depth -= 1
 
     def _explore_visit(self, name, node):
-        self.log.warn("Explore")
-        self.log.warn(name)
-        self.log.warn(dir(node))
+        log.warning(" " * self.depth + "Explore %s %s" % (name, dir(node)))
         for k in sorted(list(dir(node))):
             if not k.startswith("__"):
-                self.log.warn(k, getattr(node, k))
-        self.log.warn("---")
+                log.warning(" " * self.depth, k, getattr(node, k))
+        log.warning(" " * self.depth + "---")
 
     def _known_visit(self, name, nodex):
         for k in self.visited[name]:
@@ -316,8 +321,9 @@ class UnbundlingVisitor(NodeVisitor):
                     for f in node._fields:
                         yield '"%s": []' % (f,)
 
-                self.log.warn(
-                    '"%s": {%s},' % (type(node).__name__, ",".join(field_str(node)))
+                log.warning(
+                    " " * self.depth
+                    + '"%s": {%s},' % (type(node).__name__, ",".join(field_str(node)))
                 )
             self.missed_parents.add(type(node).__name__)
         else:
@@ -335,10 +341,10 @@ def unbundle_ast(ast: AST):
     try:
         assert len(v.missed_parents) == 0
     except AssertionError:
-        self.log.error("Missed AST types to handle")
-        self.log.error(sorted(list(v.missed_parents)))
-        self.log.error("Optional AST types to handle")
-        self.log.error(sorted(list(v.missed_children)))
+        log.error("Missed AST types to handle")
+        log.error(sorted(list(v.missed_parents)))
+        log.error("Optional AST types to handle")
+        log.error(sorted(list(v.missed_children)))
         raise
 
     return result
@@ -392,6 +398,71 @@ class BagOfConcepts(object):
         _visit_strict_pairs.name = node_name
         _visit_strict_pairs.__name__ = node_name
         return _visit_strict_pairs
+
+
+def contains_return(element, top_level=None):
+    maybe_contained = deque([element])
+
+    MAX_ITERS = 10000
+    for i in range(MAX_ITERS):
+        if len(maybe_contained) == 0:
+            break
+
+        element = maybe_contained.popleft()
+        if element is None:
+            return False
+
+        if isinstance(element, Return):
+            log.debug("Return found %s", id(element))
+            return True
+
+        # From the AST, Statements that might contain Return (itself a statement that can't contain a Return)
+        #   FunctionDef(identifier name, arguments args,
+        #                stmt* body, expr* decorator_list, expr? returns,
+        #                string? type_comment)
+        #   | AsyncFunctionDef(identifier name, arguments args,
+        #                      stmt* body, expr* decorator_list, expr? returns,
+        #                      string? type_comment)
+        #   | ClassDef(identifier name,
+        #      expr* bases,
+        #      keyword* keywords,
+        #      stmt* body,
+        #      expr* decorator_list)
+        #   | For(expr target, expr iter, stmt* body, stmt* orelse, string? type_comment)
+        #   | AsyncFor(expr target, expr iter, stmt* body, stmt* orelse, string? type_comment)
+        #   | While(expr test, stmt* body, stmt* orelse)
+        #   | If(expr test, stmt* body, stmt* orelse)
+        #   | With(withitem* items, stmt* body, string? type_comment)
+        #   | AsyncWith(withitem* items, stmt* body, string? type_comment)
+        #   | Try(stmt* body, excepthandler* handlers, stmt* orelse, stmt* finalbody)
+
+        if (
+            isinstance(element, FunctionDef)
+            or isinstance(element, AsyncFunctionDef)
+            or isinstance(element, ClassDef)
+            or isinstance(element, With)
+            or isinstance(element, AsyncWith)
+        ):
+            maybe_contained.extend(element.body)
+
+        if (
+            isinstance(element, For)
+            or isinstance(element, AsyncFor)
+            or isinstance(element, While)
+            or isinstance(element, If)
+        ):
+            maybe_contained.extend(element.body)
+            maybe_contained.extend(element.orelse)
+
+        if isinstance(element, Try):
+            maybe_contained.extend(element.body)
+            maybe_contained.extend(element.orelse)
+            maybe_contained.extend(element.finalbody)
+
+    if i == MAX_ITERS - 1:
+        return True
+
+    return False
 
 
 def nested_unpack(element, top_level=None):
@@ -567,10 +638,10 @@ def nested_unpack(element, top_level=None):
                     yield did
 
             if len(element.keywords) > 0:
-                self.log.warn(element)
-                self.log.warn(ast_unparse(element))
-                self.log.warn(element.keywords)
-                self.log.warn(ast_unparse(element.keywords))
+                log.warning(" " * self.depth + element)
+                log.warning(" " * self.depth + ast_unparse(element))
+                log.warning(" " * self.depth + element.keywords)
+                log.warning(" " * self.depth + ast_unparse(element.keywords))
                 1 / 0
 
         return list(flattened_ClassDef())
@@ -623,10 +694,10 @@ def nested_unpack(element, top_level=None):
         return list(flattened_List())
     elif isinstance(element, Raise):
         if element.cause is not None:
-            self.log.warn(element)
-            self.log.warn(ast_unparse(element))
-            self.log.warn(element.cause)
-            self.log.warn(ast_unparse(element.cause))
+            log.warning(" " * self.depth + element)
+            log.warning(" " * self.depth + ast_unparse(element))
+            log.warning(" " * self.depth + element.cause)
+            log.warning(" " * self.depth + ast_unparse(element.cause))
             1 / 0
         return nested_unpack(element.exc)
     elif isinstance(element, Delete):
@@ -652,23 +723,23 @@ def nested_unpack(element, top_level=None):
         return list(flattened_ExceptHandler())
 
     else:
-        self.log.warn("args unpacking?")
+        log.warning(" " * self.depth + "args unpacking?")
         if top_level is not None:
-            self.log.warn("Top Level")
-            self.log.warn(top_level)
-            self.log.warn(ast_unparse(top_level))
-            self.log.warn("Element")
-        self.log.warn(element)
-        self.log.warn(ast_unparse(element))
-        self.log.warn(element._fields)
+            log.warning(" " * self.depth + "Top Level")
+            log.warning(" " * self.depth + top_level)
+            log.warning(" " * self.depth + ast_unparse(top_level))
+            log.warning(" " * self.depth + "Element")
+        log.warning(" " * self.depth + element)
+        log.warning(" " * self.depth + ast_unparse(element))
+        log.warning(" " * self.depth + element._fields)
         code.interact(local=dict(ChainMap({"ast_unparse": ast_unparse}, locals())))
         1 / 0
 
 
 class RandomizingTransformer(NodeTransformer):
-    def __init__(self, corpus, *, log_level="WARN"):
-        self.log = logging.getLogger("RandomizingTransformer")
-        self.log.setLevel(log_level)
+    def __init__(self, corpus, *, log_level=None):
+        if log_level is not None:
+            log.setLevel(log_level)
 
         self.corpus = corpus
 
@@ -686,6 +757,7 @@ class RandomizingTransformer(NodeTransformer):
                 "IndexError": "Error",
                 "ValueError": "Error",
                 "AttributeError": "Error",
+                "__random_code_return_ok": False,
             }
         )
         # TODO(buck): Check to make sure we're not rejecting builtins
@@ -698,6 +770,8 @@ class RandomizingTransformer(NodeTransformer):
             name = "visit_%s" % (k,)
             if not hasattr(self, name):
                 setattr(self, name, self._helper_function_factory(k))
+            else:
+                log.debug(" " * self.depth + "Not clobbering %s", k)
 
         for k in self.ignore:
             name = "visit_%s" % (k,)
@@ -715,6 +789,13 @@ class RandomizingTransformer(NodeTransformer):
         if node_type in i_know_its_wrong:
             return True
 
+        if (
+            "__random_code_return_ok" not in self.scope
+            or not self.scope["__random_code_return_ok"]
+        ):
+            if contains_return(proposed_swap, proposed_swap):
+                return False
+
         if node_type == "arg":
             if node_.arg == "self" or proposed_swap.arg == "self":
                 # Heuristic because self has special usage
@@ -723,14 +804,15 @@ class RandomizingTransformer(NodeTransformer):
             if node_.annotation is None or node_.annotation.id == "Any":
                 return True
 
-            # Note: Right now this is strictly equial type swapping vs allowing subtypes
+            # Note: Right now this is strictly equal type swapping vs allowing subtypes
             return proposed_swap.annotation.id == node_.annotation.id
 
         if node_type == "Name":
             if proposed_swap.id not in self.scope:
                 self.out_of_scope.add(proposed_swap.id)
-                self.log.debug(
-                    " " * self.depth + "Bad Swap: proposed_swap out of scope"
+                log.debug(
+                    " " * self.depth
+                    + "Bad Swap: proposed_swap out of scope %s" % (proposed_swap.id,)
                 )
                 return False
 
@@ -744,7 +826,7 @@ class RandomizingTransformer(NodeTransformer):
                 type_to_match == "Any" or self.scope[proposed_swap.id] == type_to_match
             )
             if condition:
-                self.log.debug(
+                log.debug(
                     " " * self.depth
                     + "Good Swap %s and (%s or %s) scope: %s"
                     % (
@@ -755,7 +837,7 @@ class RandomizingTransformer(NodeTransformer):
                     )
                 )
             else:
-                self.log.debug(
+                log.debug(
                     " " * self.depth
                     + "Bad Swap %s and (%s or %s)"
                     % (
@@ -767,7 +849,6 @@ class RandomizingTransformer(NodeTransformer):
             return condition
 
         # TODO(buck): un-ignore op types, swap op types
-        # TODO(buck): Allow swapping import, import from
 
         if node_type == "Call":
             names_to_check = []
@@ -786,9 +867,9 @@ class RandomizingTransformer(NodeTransformer):
                 # assert len(names_to_check) > 0
                 # Counter Example: 'a b c'.split()
             except AssertionError:
-                self.log.error("Failed to find names to check")
-                self.log.error(proposed_swap)
-                self.log.error(ast_unparse(proposed_swap))
+                log.error(" " * self.depth + "Failed to find names to check")
+                log.error(" " * self.depth + proposed_swap)
+                log.error(" " * self.depth + ast_unparse(proposed_swap))
                 code.interact(
                     local=dict(ChainMap({"ast_unparse": ast_unparse}, locals()))
                 )
@@ -819,9 +900,9 @@ class RandomizingTransformer(NodeTransformer):
             *arguments.kwonlyargs,
         ]
         if arguments.vararg is not None:
-            self.log.warn("arguments.vararg")
-            self.log.warn(arguments.vararg)
-            self.log.warn(ast_unparse(arguments.vararg))
+            log.warning(" " * self.depth + "arguments.vararg")
+            log.warning(" " * self.depth + arguments.vararg)
+            log.warning(" " * self.depth + ast_unparse(arguments.vararg))
             # TODO(add to list of args)
             1 / 0
             args.append(arguments.vararg)
@@ -831,6 +912,8 @@ class RandomizingTransformer(NodeTransformer):
 
     def _helper_function_factory(self, node_name):
         def _visit_X(node_):
+            assert node_name != "FunctionDef"
+
             if self.depth > self.max_depth:
                 return node_
 
@@ -838,10 +921,15 @@ class RandomizingTransformer(NodeTransformer):
                 if self.valid_swap(node_, swapout):
                     # Let python scoping drop this variable
                     break
+            else:
+                # no valid swapout found
+                # TODO(buck): In theory, we should always have at least one from the corpus?
+                return node_
 
             if node_name == "arguments":
-                self.log.debug(
-                    "Swapped arguments in Scope %s for %s"
+                log.debug(
+                    " " * self.depth
+                    + "Swapped arguments in Scope %s for %s"
                     % (
                         [a.arg for a in self.args_to_names(node_)],
                         [a.arg for a in self.args_to_names(swapout)],
@@ -860,8 +948,8 @@ class RandomizingTransformer(NodeTransformer):
                         1 / 0
                     self.scope[arg.arg] = type_
                     if arg.annotation is not None or arg.type_comment is not None:
-                        self.log.debug("arguments - Typed Scope")
-                        self.log.debug(self.scope)
+                        log.debug(" " * self.depth + "arguments - Typed Scope")
+                        log.debug(" " * self.depth + str(self.scope))
 
             # TODO(buck): Lambda
             # TODO(buck): GeneratorExpressions
@@ -873,43 +961,50 @@ class RandomizingTransformer(NodeTransformer):
             # TODO(buck): With
             # TODO(buck): ClassDef
             # TODO(buck): check/sync scoping implementation with list of new def functionality
-            if node_name == "FunctionDef":
-                # TODO(buck): Typing a FunctionDef would enable swapping a function call for a value
-                self.scope[swapout.name] = "FunctionDef"
-                # TODO(buck): Add helper for pushing a new scope, auto-popping after _post_visit
-                self.scope = self.scope.new_child()
-                args = self.args_to_names(swapout.args)
-
-                for arg in args:
-                    # TODO(buck) add Typing info
-                    type_ = "Any"
-                    if arg.annotation is not None:
-                        type_ = arg.annotation.id
-                    elif arg.type_comment is not None:
-                        # TODO(buck): check this code path
-                        type_ = arg.type_comment.id
-                        1 / 0
-                    self.scope[arg.arg] = type_
-                    if arg.annotation is not None or arg.type_comment is not None:
-                        self.log.debug("FunctionDef - Typed Scope")
-                        self.log.debug(self.scope)
 
             result = swapout
             # TODO(buck): Remove carve-out for arg so we can explore replacing aspects of the arg once we have typing
             if node_name not in ["arg"]:
                 result = self._post_visit(swapout)
 
-            if node_name == "FunctionDef":
-                self.scope = self.scope.parents
+            ## Start If Inspection
+            if node_name == "If":
+                log.debug("\n===\nIf return evaluation")
+                log.debug(
+                    "Start contains return %s, in scope %s, return ok %s",
+                    contains_return(node_, node_),
+                    "__random_code_return_ok" in self.scope,
+                    self.scope["__random_code_return_ok"],
+                )
+                log.debug(ast_unparse(node_))
+                log.debug(
+                    "Swap contains return %s",
+                    contains_return(swapout, swapout),
+                )
+                log.debug(ast_unparse(swapout))
+            if (
+                "__random_code_return_ok" not in self.scope
+                or not self.scope["__random_code_return_ok"]
+            ):
+                if contains_return(swapout, swapout):
+                    if node_name == "If":
+                        log.debug("Skipping Due to Contains Return")
+            ## End If Inspection
 
-            self.log.debug(
+            log.debug(
                 " " * self.depth + "Swapped " + str(node_) + " for " + str(result)
             )
-            self.log.debug(" " * self.depth + "====")
-            self.log.debug(ast_unparse(node_))
-            self.log.debug(" " * self.depth + ">>>>")
-            self.log.debug(ast_unparse(swapout))
-            self.log.debug(" " * self.depth + "====")
+            log.debug(" " * self.depth + "====")
+            try:
+                log.debug(" " * self.depth + ast_unparse(node_))
+            except RecursionError:
+                log.debug(" " * self.depth + str(node_))
+            log.debug(" " * self.depth + ">>>>")
+            try:
+                log.debug(" " * self.depth + ast_unparse(swapout))
+            except RecursionError:
+                log.debug(" " * self.depth + str(swapout))
+            log.debug(" " * self.depth + "====")
             return result
 
         _visit_X.name = node_name
@@ -929,7 +1024,7 @@ class RandomizingTransformer(NodeTransformer):
         return _visit_X_ignore
 
     def _post_visit(self, node):
-        self.log.debug(" " * self.depth + type(node).__name__ + " " + str(self.scope))
+        log.debug(" " * self.depth + type(node).__name__ + " " + str(self.scope))
 
         self.depth += 1
         result = NodeTransformer.generic_visit(self, node)
@@ -940,14 +1035,101 @@ class RandomizingTransformer(NodeTransformer):
     def generic_visit(self, node):
         node_type_str = type(node).__name__
         name = "visit_%s" % (node_type_str,)
-        self.log.info(
-            "generic_visit: Providing default ignore case for %s" % (node_type_str,)
+        log.debug(
+            " " * self.depth
+            + "generic_visit: Providing default ignore case for %s" % (node_type_str,)
         )
         setattr(self, name, self._ignore_function_factory(node_type_str))
         return self._post_visit(node)
 
+    # TODO(buck) @depth_protection() # increment depth, check max depth, decrement depth on function exit
+    def visit_FunctionDef(self, node_):
+        if self.depth > self.max_depth:
+            return node_
 
-def the_sauce(gen: BagOfConcepts, start: Module, *, log_level="WARN"):
+        for swapout in self.corpus.FunctionDef():
+            if self.valid_swap(node_, swapout):
+                # Let python scoping drop this variable
+                break
+
+        # Scoping Order
+        # decorator_list
+        # returns
+        # args
+        #
+        # name
+        #
+        # body (body has name [recursion], args, decorator names in scope)
+        # type comment (it's a comment, anyone can write anything there, but other code can't observe it
+
+        # Note: previous definition doesn't exist because it wasn't reached by the transformer yet
+        # Note: Typing a FunctionDef as its return value would enable swapping a function call for a value
+        log.debug(
+            " " * self.depth + "Scope before FunctionDef start %s" % (self.scope,)
+        )
+        self.scope = self.scope.new_child()
+        self.depth += 1
+        self.scope["__random_code_return_ok"] = True
+        log.debug(" " * self.depth + "Scope at FunctionDef start %s" % (self.scope,))
+
+        # decorator_list
+        for i in range(len(swapout.decorator_list)):
+            swapout.decorator_list[i] = NodeTransformer.generic_visit(
+                self, swapout.decorator_list[i]
+            )
+            assert swapout.decorator_list[i] is not None
+        # returns
+        if swapout.returns is not None:
+            swapout.returns = NodeTransformer.generic_visit(self, swapout.returns)
+            assert swapout.returns is not None
+        # args
+        swapout.args = NodeTransformer.generic_visit(self, swapout.args)
+        assert swapout.args is not None
+
+        for arg in self.args_to_names(swapout.args):
+            type_ = "Any"
+            if arg.annotation is not None:
+                type_ = arg.annotation.id
+            elif arg.type_comment is not None:
+                # TODO(buck): check this code path
+                type_ = arg.type_comment.id
+                1 / 0
+            self.scope[arg.arg] = type_
+        log.debug(" " * self.depth + "Scope after FunctionDef args %s" % (self.scope,))
+
+        # name
+        self.scope.maps[1][swapout.name] = "FunctionDef"
+        log.debug(" " * self.depth + "Scope after FunctionDef name %s" % (self.scope,))
+
+        # body
+        for i in range(len(swapout.body)):
+            swapout.body[i] = NodeTransformer.generic_visit(self, swapout.body[i])
+            assert swapout.body[i] is not None
+
+        result = swapout
+
+        log.debug(" " * self.depth + "Scope at FunctionDef end %s" % (self.scope,))
+        # TODO(buck): calculate depth based on scope?
+        self.depth -= 1
+        self.scope = self.scope.parents
+        log.debug(" " * self.depth + "Scope after FunctionDef end %s" % (self.scope,))
+
+        log.debug(" " * self.depth + "Swapped " + str(node_) + " for " + str(result))
+        log.debug(" " * self.depth + "====")
+        try:
+            log.debug(" " * self.depth + ast_unparse(node_))
+        except RecursionError:
+            log.debug(" " * self.depth + str(node_))
+        log.debug(" " * self.depth + ">>>>")
+        try:
+            log.debug(" " * self.depth + ast_unparse(swapout))
+        except RecursionError:
+            log.debug(" " * self.depth + str(swapout))
+        log.debug(" " * self.depth + "====")
+        return result
+
+
+def the_sauce(gen: BagOfConcepts, start: Module, *, log_level=None):
     transformer = RandomizingTransformer(gen, log_level=log_level)
     result = transformer.visit(start)
     assert result is not None
@@ -973,9 +1155,9 @@ def make_asts(corpus: tList[str]):
                 syntax_errors.append(corpus_file_path)
 
     if len(syntax_errors) > 0:
-        self.log.debug("Syntax Mishaps")
-        self.log.debug(syntax_errors[:5])
-        self.log.debug("...")
+        log.debug("Syntax Mishaps")
+        log.debug(syntax_errors[:5])
+        log.debug("...")
 
     return ast_set
 
@@ -993,9 +1175,10 @@ def find_files(directory: str):
 
 
 class RandomCodeSource(object):
-    def __init__(self, corpus: tList[str], seed=1, *, log_level="WARN"):
+    def __init__(self, corpus: tList[str], seed=1, *, log_level=None):
         assert len(corpus) > 0
-        self.log_level = log_level
+        if log_level is not None:
+            log.setLevel(log_level)
 
         ast_set = make_asts(corpus)
         raw_materials = merge_unbundled_asts(ast_set.values())
@@ -1003,14 +1186,23 @@ class RandomCodeSource(object):
 
     def next_source(self):
         starter_home = next(self.gen.Module())
-        result = the_sauce(self.gen, starter_home, log_level=self.log_level)
-        text_result = ast_unparse(result)
-        return text_result
+        result = the_sauce(self.gen, starter_home)
+
+        # Five retries
+        # TODO(buck): Recursion: keep track of parents (maybe hash parents?), don't swap for a parent
+        for i in range(3):
+            try:
+                text_result = ast_unparse(result)
+                return text_result
+            except RecursionError as re:
+                log.warning("Infinite Recursion suspected in result")
+
+        raise ValueError("Random code generation caused a cycle")
 
 
 # todo: accept str or path
-def give_me_random_code(corpus: tList[str]):
-    code_source = RandomCodeSource(corpus)
+def give_me_random_code(corpus: tList[str], *, log_level=None):
+    code_source = RandomCodeSource(corpus, log_level=log_level)
 
     text_result = code_source.next_source()
     return text_result
@@ -1020,7 +1212,9 @@ def main():
     corpus_paths = list(find_files("corpus"))
     print(corpus_paths)
     print("### Random Code")
-    random_source = give_me_random_code(["corpus/int_functions.py", "corpus/main.py"])
+    random_source = give_me_random_code(
+        ["corpus/int_functions.py", "corpus/main.py"], log_level="DEBUG"
+    )
     print(random_source)
 
 
