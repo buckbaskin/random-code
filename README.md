@@ -2,33 +2,33 @@
 
 Generate random Python from a corpus of examples
 
-The function `give_me_random_code` generates a new code example from a corpus
+- The function `give_me_random_code` generates a new code example from a corpus
+- The class `RandomCodeSource` will continually generate new code samples from a corpus
 
 The function uses something similar to Waveform Collapse (citation needed) to exchange subsets of examples from the corpus in a random fashion to arrive at new code blocks
+
+## Features
+
+Things that Work:
+- [x] Running the default script on a small custom example
+
+Things that maybe work:
+- [ ] Running the example script on an a big codebase
+- [ ] Check variable names are in scope
+
+Things that are planned to work in the future:
+- Tests that verify important functions
+- Exchange elements with elements of the exact same type, so the logic is likely useful
+- Exchange similar elements (e.g. import/import from, replacing an integer with a function that returns an integer)
+
 
 ## Example Output
 
 Generated with script `big_example.py` from hypothesis https://github.com/HypothesisWorks/hypothesis/commit/b6633778e8687e64e039b050b792adab1135a17e
 
-### Module as Generated Source
-
+### Randomly Generated Source
 ```python
-from hypothesis import HealthCheck, Verbosity, assume, given, settings, strategies as st
 
-@settings(max_examples=1, database=None)
-@given(st.integers())
-def test_single_example(n):
-    pass
-
-@settings(max_examples=1, database=None, suppress_health_check=[HealthCheck.filter_too_much, HealthCheck.too_slow], verbosity=Verbosity.debug)
-@given(st.integers())
-def test_hard_to_find_single_example(n):
-    assume(((n % 50) == 11))
-```
-
-### Modifed version as Generated Source
-
-```python
 from hypothesis.utils.conventions import settings
 
 def test_no_single_floats_in_range(a):
@@ -45,4 +45,5 @@ def test_fails_health_check_for_slow_draws(*, i: target=(kwargs, kwargs, None), 
             import given
         except AttributeError:
             ValueError = AttributeError()
+
 ```

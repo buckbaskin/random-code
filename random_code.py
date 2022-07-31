@@ -926,37 +926,34 @@ def find_files(directory: str):
                 yield os.path.join(dirpath, f)
 
 
+class RandomCodeSource(object):
+    def __init__(self, corpus: tList[str], seed=1):
+        assert len(corpus) > 0
+        ast_set = make_asts(corpus)
+        raw_materials = merge_unbundled_asts(ast_set.values())
+        self.gen = BagOfConcepts(raw_materials, seed=seed)
+
+    def next_source(self):
+        starter_home = next(self.gen.Module())
+        result = the_sauce(self.gen, starter_home)
+        text_result = ast_unparse(result)
+        return text_result
+
+
 # todo: accept str or path
 def give_me_random_code(corpus: tList[str]):
-    assert len(corpus) > 0
+    code_source = RandomCodeSource(corpus)
 
-    ast_set = make_asts(corpus)
-
-    raw_materials = merge_unbundled_asts(ast_set.values())
-
-    gen = BagOfConcepts(raw_materials, seed=1)
-
-    starter_home = next(gen.Module())
-
-    print("Module as Generated Source")
-    print(starter_home)
-    print(ast_unparse(starter_home))
-
-    result = the_sauce(gen, starter_home)
-
-    print("Modifed version as Generated Source")
-    print(result)
-
-    text_result = ast_unparse(result)
-    print(text_result)
-
+    text_result = code_source.next_source()
     return text_result
 
 
 def main():
     corpus_paths = list(find_files("corpus"))
     print(corpus_paths)
+    print("### Random Code")
     random_source = give_me_random_code(["corpus/int_functions.py", "corpus/main.py"])
+    print(random_source)
 
 
 if __name__ == "__main__":
