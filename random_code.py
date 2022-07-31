@@ -1,38 +1,113 @@
 from ast import (
+    Assert,
+    withitem,
+    While,
+    Assign,
     AST,
     Attribute,
     BinOp,
     BoolOp,
     Call,
+    ClassDef,
     Compare,
     Constant,
+    Delete,
     Dict,
     DictComp,
     dump,
     Expr,
     fix_missing_locations,
+    For,
+    FormattedValue,
     FunctionDef,
     GeneratorExp,
+    If,
     IfExp,
+    Import,
+    ImportFrom,
+    Index,
     JoinedStr,
+    keyword,
     Lambda,
     List,
+    Pass,
     ListComp,
     Module,
     Name,
     NodeTransformer,
     NodeVisitor,
     parse,
+    Raise,
     Return,
     Set,
     SetComp,
     Starred,
     Subscript,
+    Try,
     Tuple,
     UnaryOp,
     With,
     Yield,
 )
+
+### Feature List
+# "alias": {"name": [], "asname": []},
+# "AnnAssign": {"target": [], "annotation": [], "value": [], "simple": []},
+# "arg": {"arg": [], "annotation": [], "type_comment": []},
+# "arguments": {
+# "Assert": {"test": [], "msg": []},
+# "Assign": {"targets": [], "value": [], "type_comment": []},
+# "AsyncFunctionDef": {
+# "Attribute": {"value": [], "attr": [], "ctx": []},
+# "AugAssign": {"target": [], "op": [], "value": []},
+# "Await": {"value": []},
+# "BinOp": {"left": [], "right": [], "op": []},
+# "BoolOp": {"op": [], "values": []},
+# "Call": {"func": [], "args": [], "keywords": []},
+# "ClassDef": {
+# "Compare": {"left": [], "ops": [], "comparators": []},
+# "comprehension": {"target": [], "iter": [], "ifs": [], "is_async": []},
+# "Constant": {"value": [], "kind": []},
+# "Delete": {"targets": []},
+# "Dict": {"keys": [], "values": []},
+# "DictComp": {"key": [], "value": [], "generators": []},
+# "ExceptHandler": {"type": [], "name": [], "body": []},
+# "Expr": {"value": []},
+# "For": {
+# "FormattedValue": {"value": [], "conversion": [], "format_spec": []},
+# "FunctionDef": {
+# "GeneratorExp": {"elt": [], "generators": []},
+# "Global": {"names": []},
+# "If": {"test": [], "body": [], "orelse": []},
+# "IfExp": {"test": [], "body": [], "orelse": []},
+# "Import": {"names": []},
+# "ImportFrom": {"module": [], "names": [], "level": []},
+# "Index": {"value": []},
+# "JoinedStr": {"values": []},
+# "keyword": {"arg": [], "value": []},
+# "Lambda": {"args": [], "body": []},
+# "List": {"elts": [], "ctx": []},
+# "ListComp": {"elt": [], "generators": []},
+# "Module": {"body": [], "type_ignores": []},
+# "Name": {"id": [], "ctx": []},
+# "Nonlocal": {"names": []},
+# "Raise": {"exc": [], "cause": []},
+# "Return": {"value": []},
+# "Set": {"elts": []},
+# "SetComp": {"elt": [], "generators": []},
+# "Slice": {"lower": [], "upper": [], "step": []},
+# "Starred": {"value": [], "ctx": []},
+# "Subscript": {"value": [], "slice": [], "ctx": []},
+# "Try": {"body": [], "handlers": [], "orelse": [], "finalbody": []},
+# "Tuple": {"elts": [], "ctx": []},
+# "TypeIgnore": {"lineno": [], "tag": []},
+# "UnaryOp": {"op": [], "operand": []},
+# "While": {"test": [], "body": [], "orelse": []},
+# "With": {"items": [], "body": [], "type_comment": []},
+# "withitem": {"context_expr": [], "optional_vars": []},
+# "Yield": {"value": []},
+# "YieldFrom": {"value": []},
+### End Feature List (~60 elements)
 
 try:
     # python3.9 and after
@@ -328,7 +403,16 @@ class RandomizingTransformer(NodeTransformer):
         self.missed_children = set()
 
         # This is where the craziness begins
-        self.scope = ChainMap({"tuple": "Type", "dict": "Type"})
+        self.scope = ChainMap(
+            {
+                "tuple": "Type",
+                "dict": "Type",
+                "object": "Type",
+                "IndexError": "Error",
+                "ValueError": "Error",
+                "AttributeError": "Error",
+            }
+        )
         # TODO(buck): Check to make sure we're not rejecting builtins
         self.out_of_scope = set()
 
@@ -351,9 +435,12 @@ class RandomizingTransformer(NodeTransformer):
 
         if isinstance(element, Name):
             return [element.id]
-        elif isinstance(element, Constant):
+        elif isinstance(element, Constant) or isinstance(element, Pass):
             return []
-        elif isinstance(element, Attribute):
+        elif isinstance(element, ImportFrom) or isinstance(element, Import):
+            # TODO(buck): Maybe re-evaluate unpacking imports?
+            return []
+        elif isinstance(element, Attribute) or isinstance(element, Index):
             return self.nested_unpack(element.value, top_level)
         elif hasattr(element, "func"):
             return self.nested_unpack(element.func, top_level)
@@ -370,7 +457,11 @@ class RandomizingTransformer(NodeTransformer):
             return self.nested_unpack(element.value, top_level)
         elif isinstance(element, Subscript):
             return self.nested_unpack(element.value, top_level)
-        elif isinstance(element, IfExp):
+        elif (
+            isinstance(element, If)
+            or isinstance(element, IfExp)
+            or isinstance(element, While)
+        ):
             # Note: the body, orelse can be undefined depending on the result of the test, so taking the less strict approach here
             return self.nested_unpack(element.test, top_level)
         elif isinstance(element, UnaryOp):
@@ -480,6 +571,93 @@ class RandomizingTransformer(NodeTransformer):
             return self.nested_unpack(element.value, top_level)
         elif isinstance(element, Expr):
             return self.nested_unpack(element.value, top_level)
+        elif isinstance(element, With):
+
+            def flattened_With():
+                for withitem in element.items:
+                    for cid in self.nested_unpack(withitem.context_expr, top_level):
+                        yield cid
+
+                for expr in element.body:
+                    for eid in self.nested_unpack(expr, top_level):
+                        yield eid
+
+            return list(flattened_With())
+        elif isinstance(element, withitem):
+            return self.nested_unpack(element.context_expr, top_level)
+        elif isinstance(element, ClassDef):
+
+            def flattened_ClassDef():
+                for base in element.bases:
+                    for eid in self.nested_unpack(base, top_level):
+                        yield eid
+
+                for decorator in element.decorator_list:
+                    for did in self.nested_unpack(decorator, top_level):
+                        yield did
+
+                if len(element.keywords) > 0:
+                    print(element)
+                    print(ast_unparse(element))
+                    print(element.keywords)
+                    print(ast_unparse(element.keywords))
+                    1 / 0
+
+            return list(flattened_ClassDef())
+        elif isinstance(element, FunctionDef):
+
+            def flattened_FunctionDef():
+                for decorator in element.decorator_list:
+                    for did in self.nested_unpack(decorator, top_level):
+                        yield did
+
+            return list(flattened_FunctionDef())
+        elif isinstance(element, keyword):
+            return self.nested_unpack(element.value, top_level)
+        elif isinstance(element, Assign):
+            return self.nested_unpack(element.value, top_level)
+        elif isinstance(element, Try):
+            # Note: handlers, orelse, finalbody conditionally executed and ignored
+
+            def flattened_Try():
+                for expr in element.body:
+                    for eid in self.nested_unpack(expr, top_level):
+                        yield eid
+
+            return list(flattened_Try())
+        elif isinstance(element, Assert):
+            # Note: structurally like if
+            return self.nested_unpack(element.test, top_level)
+        elif isinstance(element, For):
+            return self.nested_unpack(element.iter, top_level)
+        elif isinstance(element, List):
+
+            def flattened_List():
+                for elem in element.elts:
+                    for eid in self.nested_unpack(elem, top_level):
+                        yield eid
+
+            return list(flattened_List())
+        elif isinstance(element, Raise):
+            if element.cause is not None:
+                print(element)
+                print(ast_unparse(element))
+                print(element.cause)
+                print(ast_unparse(element.cause))
+                1 / 0
+            return self.nested_unpack(element.exc)
+        elif isinstance(element, Delete):
+
+            def flattened_Delete():
+                for elem in element.targets:
+                    for eid in self.nested_unpack(elem, top_level):
+                        yield eid
+
+            return list(flattened_Delete())
+        elif isinstance(element, FormattedValue):
+            # TODO(buck): Revisit FormattedValue expansion
+            return []
+
         else:
             print("args unpacking?")
             if top_level is not None:
@@ -489,44 +667,20 @@ class RandomizingTransformer(NodeTransformer):
                 print("Element")
             print(element)
             print(ast_unparse(element))
+            print(element._fields)
             code.interact(local=dict(ChainMap({"ast_unparse": ast_unparse}, locals())))
             1 / 0
 
     def valid_swap(self, node_, proposed_swap):
         # TODO(buck): check for mixed usage of node_, proposed_swap
         node_type = type(node_).__name__
-        new_definitions = ["Module", "FunctionDef", "arguments", "Assign", "Lambda"]
+        new_definitions = ["Module", "arguments"]
         if node_type in new_definitions:
             return True
 
         i_know_its_wrong = ["alias", "ImportFrom"]
         # TODO(buck) Revisit alias when I'm ready to inspect modules
         if node_type in i_know_its_wrong:
-            return True
-
-        trivial = ["JoinedStr", "Constant", "FormattedValue"]
-        # e.g. '''abc''' '''def'''
-        # e.g. 1
-        # e.g. {world!s} in 'Hello {world!s}'
-        # TODO(buck): Check FormattedValue
-        if node_type in trivial:
-            return True
-
-        check_the_name = [
-            "Attribute",
-            "With",
-            "Return",
-            "Yield",
-            "If",
-            "Compare",
-            "Expr",
-        ]
-        if node_type in check_the_name:
-            names_to_check = self.nested_unpack(proposed_swap)
-            for name in names_to_check:
-                if name not in self.scope:
-                    self.out_of_scope.add(name)
-                    return False
             return True
 
         if node_type == "arg":
@@ -591,29 +745,12 @@ class RandomizingTransformer(NodeTransformer):
             # TODO(buck): Or match on Load/etc context ctx
             1 / 0
 
-        # TODO(buck): Start with name resolution
-        # TODO(buck): Move to type-aware?
-
-        print("ERR I don't know how to swap %s with scope" % (node_type,))
-        print(node_._fields)
-        print("Trying")
-        try:
-            print(ast_unparse(node_))
-        except AttributeError:
-            print("AttributeError unparsing %s" % (node_,))
-        print("Swapping For")
-        try:
-            print(ast_unparse(proposed_swap))
-        except AttributeError:
-            print("AttributeError unparsing %s" % (proposed_swap,))
-
-        print("Scope")
-        pprint(self.scope)
-
-        print(node_._fields)
-        print("Trying this interactive thing")
-        code.interact(local=dict(ChainMap({"ast_unparse": ast_unparse}, locals())))
-        1 / 0  # TODO(buck): Start here
+        names_to_check = self.nested_unpack(proposed_swap, proposed_swap)
+        for name in names_to_check:
+            if name not in self.scope:
+                self.out_of_scope.add(name)
+                return False
+        return True
 
     def args_to_names(self, arguments):
         args = [
@@ -622,11 +759,15 @@ class RandomizingTransformer(NodeTransformer):
             *arguments.kwonlyargs,
         ]
         if arguments.vararg is not None:
-            print(node_.args.vararg)
+            print("arguments.vararg")
+            print(arguments.vararg)
+            print(ast_unparse(arguments.vararg))
             # TODO(add to list of args)
             1 / 0
         if arguments.kwarg is not None:
-            print(node_.args.kwarg)
+            print("arguments.kwarg")
+            print(arguments.kwarg)
+            print(ast_unparse(arguments.kwarg))
             # TODO(add to list of args)
             1 / 0
         return args
@@ -659,9 +800,11 @@ class RandomizingTransformer(NodeTransformer):
             # TODO(buck): Lambda
             # TODO(buck): GeneratorExpressions
             # TODO(buck): ListComps
+            # TODO(buck): Assignment
             # TODO(buck): DictComps
             # TODO(buck): SetComps
             # TODO(buck): With
+            # TODO(buck): ClassDef
             # TODO(buck): check/sync with list of new def functionality
             if node_name == "FunctionDef":
                 # TODO(buck): Typing a FunctionDef would enable swapping a function call for a value
