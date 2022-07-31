@@ -122,7 +122,6 @@ import code
 
 from collections import defaultdict, ChainMap
 from typing import List as tList, Dict as tDict
-from frozendict import frozendict
 from random import Random
 
 from pprint import pprint
@@ -919,6 +918,9 @@ def make_asts(corpus: tList[str]):
 
 def find_files(directory: str):
     import os
+
+    directory = os.path.normpath(directory)
+    directory = os.path.realpath(directory)
 
     for dirpath, dirnames, filenames in os.walk(directory):
         for f in filenames:
