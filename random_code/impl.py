@@ -445,7 +445,7 @@ def nested_unpack(element, top_level=None):
         def flattened_BoolOp():
             for v in element.values:
                 for vid in nested_unpack(v, top_level):
-                    yield v
+                    yield vid
 
         return list(flattened_BoolOp())
     elif isinstance(element, Compare):
