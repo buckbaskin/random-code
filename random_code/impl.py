@@ -393,6 +393,264 @@ class BagOfConcepts(object):
         return _visit_strict_pairs
 
 
+def nested_unpack(element, top_level=None):
+    # TODO(buck): Make this a while loop with controlled depth
+    if element is None:
+        return []
+
+    if isinstance(element, Name):
+        return [element.id]
+    elif (
+        isinstance(element, Constant)
+        or isinstance(element, Pass)
+        or isinstance(element, Break)
+    ):
+        return []
+    elif isinstance(element, ImportFrom) or isinstance(element, Import):
+        # TODO(buck): Maybe re-evaluate unpacking imports?
+        return []
+    elif isinstance(element, Attribute) or isinstance(element, Index):
+        return nested_unpack(element.value, top_level)
+    elif hasattr(element, "func"):
+        return nested_unpack(element.func, top_level)
+    elif isinstance(element, Lambda):
+        # TODO(buck): check underlying
+        return []
+    elif isinstance(element, List):
+        # TODO(buck): check underlying
+        return []
+    elif isinstance(element, Tuple):
+        # TODO(buck): check underlying
+        return []
+    elif isinstance(element, Starred):
+        return nested_unpack(element.value, top_level)
+    elif isinstance(element, Subscript):
+        return nested_unpack(element.value, top_level)
+    elif (
+        isinstance(element, If)
+        or isinstance(element, IfExp)
+        or isinstance(element, While)
+    ):
+        # Note: the body, orelse can be undefined depending on the result of the test, so taking the less strict approach here
+        return nested_unpack(element.test, top_level)
+    elif isinstance(element, UnaryOp):
+        return nested_unpack(element.operand, top_level)
+    elif isinstance(element, BinOp):
+        return [
+            *nested_unpack(element.left, top_level),
+            *nested_unpack(element.right, top_level),
+        ]
+    elif isinstance(element, BoolOp):
+
+        def flattened_BoolOp():
+            for v in element.values:
+                for vid in nested_unpack(v, top_level):
+                    yield v
+
+        return list(flattened_BoolOp())
+    elif isinstance(element, Compare):
+
+        def flattened_Compare():
+            for lid in nested_unpack(element.left, top_level):
+                yield lid
+            for comparator in element.comparators:
+                for cid in nested_unpack(comparator, top_level):
+                    yield cid
+
+        return list(flattened_Compare())
+
+    elif isinstance(element, Dict):
+
+        def flattened_Dict():
+            for k in element.keys:
+                for kid in nested_unpack(k, top_level):
+                    yield kid
+            for v in element.values:
+                for vid in nested_unpack(v, top_level):
+                    yield vid
+
+        return list(flattened_Dict())
+    elif isinstance(element, Set):
+
+        def flattened_Set():
+            for k in element.elts:
+                for kid in nested_unpack(k, top_level):
+                    yield kid
+
+        return list(flattened_Set())
+    elif isinstance(element, JoinedStr):
+        return []
+    elif isinstance(element, GeneratorExp):
+
+        def flattened_GeneratorExp():
+            for elt_id in nested_unpack(element.elt, top_level):
+                yield elt_id
+
+            for gen in element.generators:
+                for if_ in gen.ifs:
+                    for ifid in nested_unpack(if_, top_level):
+                        yield ifid
+                for iid in nested_unpack(gen.iter, top_level):
+                    yield iid
+
+        return list(flattened_GeneratorExp())
+    elif isinstance(element, ListComp):
+
+        # TODO(buck): Combine GeneratorExp, ListComp impl
+        def flattened_ListComp():
+            for elt_id in nested_unpack(element.elt, top_level):
+                yield elt_id
+
+            for gen in element.generators:
+                for if_ in gen.ifs:
+                    for ifid in nested_unpack(if_, top_level):
+                        yield ifid
+                for iid in nested_unpack(gen.iter, top_level):
+                    yield iid
+
+        return list(flattened_ListComp())
+    elif isinstance(element, DictComp):
+
+        def flattened_DictComp():
+            # TODO(buck): check key, value
+            for gen in element.generators:
+                for if_ in gen.ifs:
+                    for ifid in nested_unpack(if_, top_level):
+                        yield ifid
+                for iid in nested_unpack(gen.iter, top_level):
+                    yield iid
+
+        return list(flattened_DictComp())
+    elif isinstance(element, SetComp):
+
+        # TODO(buck): Combine GeneratorExp, SetComp impl
+        def flattened_SetComp():
+            for elt_id in nested_unpack(element.elt, top_level):
+                yield elt_id
+
+            for gen in element.generators:
+                for if_ in gen.ifs:
+                    for ifid in nested_unpack(if_, top_level):
+                        yield ifid
+                for iid in nested_unpack(gen.iter, top_level):
+                    yield iid
+
+        return list(flattened_SetComp())
+    elif isinstance(element, Yield) or isinstance(element, Return):
+        return nested_unpack(element.value, top_level)
+    elif isinstance(element, Expr):
+        return nested_unpack(element.value, top_level)
+    elif isinstance(element, With):
+
+        def flattened_With():
+            for withitem in element.items:
+                for cid in nested_unpack(withitem.context_expr, top_level):
+                    yield cid
+
+            for expr in element.body:
+                for eid in nested_unpack(expr, top_level):
+                    yield eid
+
+        return list(flattened_With())
+    elif isinstance(element, withitem):
+        return nested_unpack(element.context_expr, top_level)
+    elif isinstance(element, ClassDef):
+
+        def flattened_ClassDef():
+            for base in element.bases:
+                for eid in nested_unpack(base, top_level):
+                    yield eid
+
+            for decorator in element.decorator_list:
+                for did in nested_unpack(decorator, top_level):
+                    yield did
+
+            if len(element.keywords) > 0:
+                print(element)
+                print(ast_unparse(element))
+                print(element.keywords)
+                print(ast_unparse(element.keywords))
+                1 / 0
+
+        return list(flattened_ClassDef())
+    elif isinstance(element, FunctionDef):
+
+        def flattened_FunctionDef():
+            for decorator in element.decorator_list:
+                for did in nested_unpack(decorator, top_level):
+                    yield did
+
+        return list(flattened_FunctionDef())
+    elif isinstance(element, keyword):
+        return nested_unpack(element.value, top_level)
+    elif isinstance(element, Assign):
+        return nested_unpack(element.value, top_level)
+    elif isinstance(element, Try):
+        # Note: handlers, orelse, finalbody conditionally executed and ignored
+
+        def flattened_Try():
+            for expr in element.body:
+                for eid in nested_unpack(expr, top_level):
+                    yield eid
+
+        return list(flattened_Try())
+    elif isinstance(element, Assert):
+        # Note: structurally like if
+        return nested_unpack(element.test, top_level)
+    elif isinstance(element, For):
+        return nested_unpack(element.iter, top_level)
+    elif isinstance(element, List):
+
+        def flattened_List():
+            for elem in element.elts:
+                for eid in nested_unpack(elem, top_level):
+                    yield eid
+
+        return list(flattened_List())
+    elif isinstance(element, Raise):
+        if element.cause is not None:
+            print(element)
+            print(ast_unparse(element))
+            print(element.cause)
+            print(ast_unparse(element.cause))
+            1 / 0
+        return nested_unpack(element.exc)
+    elif isinstance(element, Delete):
+
+        def flattened_Delete():
+            for elem in element.targets:
+                for eid in nested_unpack(elem, top_level):
+                    yield eid
+
+        return list(flattened_Delete())
+    elif isinstance(element, FormattedValue):
+        # TODO(buck): Revisit FormattedValue expansion
+        return []
+    elif isinstance(element, ExceptHandler):
+
+        def flattened_ExceptHandler():
+            for tid in nested_unpack(element.type, top_level):
+                yield tid
+            for expr in element.body:
+                for eid in nested_unpack(expr, top_level):
+                    yield eid
+
+        return list(flattened_ExceptHandler())
+
+    else:
+        print("args unpacking?")
+        if top_level is not None:
+            print("Top Level")
+            print(top_level)
+            print(ast_unparse(top_level))
+            print("Element")
+        print(element)
+        print(ast_unparse(element))
+        print(element._fields)
+        code.interact(local=dict(ChainMap({"ast_unparse": ast_unparse}, locals())))
+        1 / 0
+
+
 class RandomizingTransformer(NodeTransformer):
     def __init__(self, corpus, *, prettyprinter=False):
         self.corpus = corpus
@@ -428,263 +686,6 @@ class RandomizingTransformer(NodeTransformer):
         for k in self.ignore:
             name = "visit_%s" % (k,)
             setattr(self, name, self._ignore_function_factory(k))
-
-    def nested_unpack(self, element, top_level=None):
-        # TODO(buck): Make this a while loop with controlled depth
-        if element is None:
-            return []
-
-        if isinstance(element, Name):
-            return [element.id]
-        elif (
-            isinstance(element, Constant)
-            or isinstance(element, Pass)
-            or isinstance(element, Break)
-        ):
-            return []
-        elif isinstance(element, ImportFrom) or isinstance(element, Import):
-            # TODO(buck): Maybe re-evaluate unpacking imports?
-            return []
-        elif isinstance(element, Attribute) or isinstance(element, Index):
-            return self.nested_unpack(element.value, top_level)
-        elif hasattr(element, "func"):
-            return self.nested_unpack(element.func, top_level)
-        elif isinstance(element, Lambda):
-            # TODO(buck): check underlying
-            return []
-        elif isinstance(element, List):
-            # TODO(buck): check underlying
-            return []
-        elif isinstance(element, Tuple):
-            # TODO(buck): check underlying
-            return []
-        elif isinstance(element, Starred):
-            return self.nested_unpack(element.value, top_level)
-        elif isinstance(element, Subscript):
-            return self.nested_unpack(element.value, top_level)
-        elif (
-            isinstance(element, If)
-            or isinstance(element, IfExp)
-            or isinstance(element, While)
-        ):
-            # Note: the body, orelse can be undefined depending on the result of the test, so taking the less strict approach here
-            return self.nested_unpack(element.test, top_level)
-        elif isinstance(element, UnaryOp):
-            return self.nested_unpack(element.operand, top_level)
-        elif isinstance(element, BinOp):
-            return [
-                *self.nested_unpack(element.left, top_level),
-                *self.nested_unpack(element.right, top_level),
-            ]
-        elif isinstance(element, BoolOp):
-
-            def flattened_BoolOp():
-                for v in element.values:
-                    for vid in self.nested_unpack(v, top_level):
-                        yield v
-
-            return list(flattened_BoolOp())
-        elif isinstance(element, Compare):
-
-            def flattened_Compare():
-                for lid in self.nested_unpack(element.left, top_level):
-                    yield lid
-                for comparator in element.comparators:
-                    for cid in self.nested_unpack(comparator, top_level):
-                        yield cid
-
-            return list(flattened_Compare())
-
-        elif isinstance(element, Dict):
-
-            def flattened_Dict():
-                for k in element.keys:
-                    for kid in self.nested_unpack(k, top_level):
-                        yield kid
-                for v in element.values:
-                    for vid in self.nested_unpack(v, top_level):
-                        yield vid
-
-            return list(flattened_Dict())
-        elif isinstance(element, Set):
-
-            def flattened_Set():
-                for k in element.elts:
-                    for kid in self.nested_unpack(k, top_level):
-                        yield kid
-
-            return list(flattened_Set())
-        elif isinstance(element, JoinedStr):
-            return []
-        elif isinstance(element, GeneratorExp):
-
-            def flattened_GeneratorExp():
-                for elt_id in self.nested_unpack(element.elt, top_level):
-                    yield elt_id
-
-                for gen in element.generators:
-                    for if_ in gen.ifs:
-                        for ifid in self.nested_unpack(if_, top_level):
-                            yield ifid
-                    for iid in self.nested_unpack(gen.iter, top_level):
-                        yield iid
-
-            return list(flattened_GeneratorExp())
-        elif isinstance(element, ListComp):
-
-            # TODO(buck): Combine GeneratorExp, ListComp impl
-            def flattened_ListComp():
-                for elt_id in self.nested_unpack(element.elt, top_level):
-                    yield elt_id
-
-                for gen in element.generators:
-                    for if_ in gen.ifs:
-                        for ifid in self.nested_unpack(if_, top_level):
-                            yield ifid
-                    for iid in self.nested_unpack(gen.iter, top_level):
-                        yield iid
-
-            return list(flattened_ListComp())
-        elif isinstance(element, DictComp):
-
-            def flattened_DictComp():
-                # TODO(buck): check key, value
-                for gen in element.generators:
-                    for if_ in gen.ifs:
-                        for ifid in self.nested_unpack(if_, top_level):
-                            yield ifid
-                    for iid in self.nested_unpack(gen.iter, top_level):
-                        yield iid
-
-            return list(flattened_DictComp())
-        elif isinstance(element, SetComp):
-
-            # TODO(buck): Combine GeneratorExp, SetComp impl
-            def flattened_SetComp():
-                for elt_id in self.nested_unpack(element.elt, top_level):
-                    yield elt_id
-
-                for gen in element.generators:
-                    for if_ in gen.ifs:
-                        for ifid in self.nested_unpack(if_, top_level):
-                            yield ifid
-                    for iid in self.nested_unpack(gen.iter, top_level):
-                        yield iid
-
-            return list(flattened_SetComp())
-        elif isinstance(element, Yield) or isinstance(element, Return):
-            return self.nested_unpack(element.value, top_level)
-        elif isinstance(element, Expr):
-            return self.nested_unpack(element.value, top_level)
-        elif isinstance(element, With):
-
-            def flattened_With():
-                for withitem in element.items:
-                    for cid in self.nested_unpack(withitem.context_expr, top_level):
-                        yield cid
-
-                for expr in element.body:
-                    for eid in self.nested_unpack(expr, top_level):
-                        yield eid
-
-            return list(flattened_With())
-        elif isinstance(element, withitem):
-            return self.nested_unpack(element.context_expr, top_level)
-        elif isinstance(element, ClassDef):
-
-            def flattened_ClassDef():
-                for base in element.bases:
-                    for eid in self.nested_unpack(base, top_level):
-                        yield eid
-
-                for decorator in element.decorator_list:
-                    for did in self.nested_unpack(decorator, top_level):
-                        yield did
-
-                if len(element.keywords) > 0:
-                    print(element)
-                    print(ast_unparse(element))
-                    print(element.keywords)
-                    print(ast_unparse(element.keywords))
-                    1 / 0
-
-            return list(flattened_ClassDef())
-        elif isinstance(element, FunctionDef):
-
-            def flattened_FunctionDef():
-                for decorator in element.decorator_list:
-                    for did in self.nested_unpack(decorator, top_level):
-                        yield did
-
-            return list(flattened_FunctionDef())
-        elif isinstance(element, keyword):
-            return self.nested_unpack(element.value, top_level)
-        elif isinstance(element, Assign):
-            return self.nested_unpack(element.value, top_level)
-        elif isinstance(element, Try):
-            # Note: handlers, orelse, finalbody conditionally executed and ignored
-
-            def flattened_Try():
-                for expr in element.body:
-                    for eid in self.nested_unpack(expr, top_level):
-                        yield eid
-
-            return list(flattened_Try())
-        elif isinstance(element, Assert):
-            # Note: structurally like if
-            return self.nested_unpack(element.test, top_level)
-        elif isinstance(element, For):
-            return self.nested_unpack(element.iter, top_level)
-        elif isinstance(element, List):
-
-            def flattened_List():
-                for elem in element.elts:
-                    for eid in self.nested_unpack(elem, top_level):
-                        yield eid
-
-            return list(flattened_List())
-        elif isinstance(element, Raise):
-            if element.cause is not None:
-                print(element)
-                print(ast_unparse(element))
-                print(element.cause)
-                print(ast_unparse(element.cause))
-                1 / 0
-            return self.nested_unpack(element.exc)
-        elif isinstance(element, Delete):
-
-            def flattened_Delete():
-                for elem in element.targets:
-                    for eid in self.nested_unpack(elem, top_level):
-                        yield eid
-
-            return list(flattened_Delete())
-        elif isinstance(element, FormattedValue):
-            # TODO(buck): Revisit FormattedValue expansion
-            return []
-        elif isinstance(element, ExceptHandler):
-
-            def flattened_ExceptHandler():
-                for tid in self.nested_unpack(element.type, top_level):
-                    yield tid
-                for expr in element.body:
-                    for eid in self.nested_unpack(expr, top_level):
-                        yield eid
-
-            return list(flattened_ExceptHandler())
-
-        else:
-            print("args unpacking?")
-            if top_level is not None:
-                print("Top Level")
-                print(top_level)
-                print(ast_unparse(top_level))
-                print("Element")
-            print(element)
-            print(ast_unparse(element))
-            print(element._fields)
-            code.interact(local=dict(ChainMap({"ast_unparse": ast_unparse}, locals())))
-            1 / 0
 
     def valid_swap(self, node_, proposed_swap):
         # TODO(buck): check for mixed usage of node_, proposed_swap
@@ -727,14 +728,14 @@ class RandomizingTransformer(NodeTransformer):
         if node_type == "Call":
             names_to_check = []
 
-            names_to_check.extend(self.nested_unpack(proposed_swap.func, proposed_swap))
+            names_to_check.extend(nested_unpack(proposed_swap.func, proposed_swap))
             if len(proposed_swap.args) > 0:
                 for a in proposed_swap.args:
-                    names_to_check.extend(self.nested_unpack(a, proposed_swap))
+                    names_to_check.extend(nested_unpack(a, proposed_swap))
             if len(proposed_swap.keywords) > 0:
                 for k in proposed_swap.keywords:
                     arg_value = k.value
-                    names_to_check.extend(self.nested_unpack(arg_value, proposed_swap))
+                    names_to_check.extend(nested_unpack(arg_value, proposed_swap))
 
             try:
                 pass
@@ -760,7 +761,7 @@ class RandomizingTransformer(NodeTransformer):
             # TODO(buck): Or match on Load/etc context ctx
             1 / 0
 
-        names_to_check = self.nested_unpack(proposed_swap, proposed_swap)
+        names_to_check = nested_unpack(proposed_swap, proposed_swap)
         for name in names_to_check:
             if name not in self.scope:
                 self.out_of_scope.add(name)
