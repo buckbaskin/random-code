@@ -716,24 +716,53 @@ class RandomizingTransformer(NodeTransformer):
             if node_.arg == "self" or proposed_swap.arg == "self":
                 # Heuristic because self has special usage
                 return False
-            return True
+
+            if node_.annotation is None or node_.annotation.id == "Any":
+                return True
+
+            # Note: Right now this is strictly equial type swapping vs allowing subtypes
+            return proposed_swap.annotation.id == node_.annotation.id
 
         if node_type == "Name":
             if proposed_swap.id not in self.scope:
                 self.out_of_scope.add(proposed_swap.id)
+                if self.prettyprinter:
+                    print(" " * self.depth + "Bad Swap: proposed_swap out of scope")
+                return False
 
-            if node_.id not in self.scope:
-                self.out_of_scope.add(node_.id)
-                # If the original is out of scope, only expect the new one to be in scope
-                # No need to type match
-                return proposed_swap.id in self.scope
+            # TODO(buck): Why is the original name not in scope?
 
-            type_to_match = self.scope[node_.id]
+            type_to_match = "Any"
+            if node_.id in self.scope:
+                type_to_match = self.scope[node_.id]
 
-            return (
-                proposed_swap.id in self.scope
-                and self.scope[proposed_swap.id] == type_to_match
+            condition = proposed_swap.id in self.scope and (
+                type_to_match == "Any" or self.scope[proposed_swap.id] == type_to_match
             )
+            if condition:
+                if self.prettyprinter:
+                    print(
+                        " " * self.depth
+                        + "Good Swap %s and (%s or %s) scope: %s"
+                        % (
+                            proposed_swap.id in self.scope,
+                            type_to_match == "Any",
+                            self.scope[proposed_swap.id] == type_to_match,
+                            self.scope,
+                        )
+                    )
+            else:
+                if self.prettyprinter:
+                    print(
+                        " " * self.depth
+                        + "Bad Swap %s and (%s or %s)"
+                        % (
+                            proposed_swap.id in self.scope,
+                            type_to_match == "Any",
+                            self.scope[proposed_swap.id] == type_to_match,
+                        )
+                    )
+            return condition
 
         # TODO(buck): un-ignore op types, swap op types
         # TODO(buck): Allow swapping import, import from
@@ -803,7 +832,6 @@ class RandomizingTransformer(NodeTransformer):
             if self.depth > self.max_depth:
                 return node_
 
-            # TODO(buck): Scan for a valid swap
             for swapout in getattr(self.corpus, node_name)():
                 if self.valid_swap(node_, swapout):
                     # Let python scoping drop this variable
@@ -820,9 +848,19 @@ class RandomizingTransformer(NodeTransformer):
                     )
                 for start_arg in self.args_to_names(node_):
                     del self.scope[start_arg.arg]
-                for next_arg in self.args_to_names(swapout):
-                    # TODO type annotation available
-                    self.scope[next_arg.arg] = "Arg"
+
+                for arg in self.args_to_names(swapout):
+                    type_ = "Any"
+                    if arg.annotation is not None:
+                        type_ = arg.annotation.id
+                    elif arg.type_comment is not None:
+                        # TODO(buck): check this code path
+                        type_ = arg.type_comment.id
+                        1 / 0
+                    self.scope[arg.arg] = type_
+                    if arg.annotation is not None or arg.type_comment is not None:
+                        print("arguments - Typed Scope")
+                        pprint(self.scope)
 
             # TODO(buck): Lambda
             # TODO(buck): GeneratorExpressions
@@ -851,6 +889,9 @@ class RandomizingTransformer(NodeTransformer):
                         type_ = arg.type_comment.id
                         1 / 0
                     self.scope[arg.arg] = type_
+                    if arg.annotation is not None or arg.type_comment is not None:
+                        print("FunctionDef - Typed Scope")
+                        pprint(self.scope)
 
             result = swapout
             # TODO(buck): Remove carve-out for arg so we can explore replacing aspects of the arg once we have typing
@@ -864,6 +905,11 @@ class RandomizingTransformer(NodeTransformer):
                 print(
                     " " * self.depth + "Swapped " + str(node_) + " for " + str(result)
                 )
+                print(" " * self.depth + "====")
+                print(ast_unparse(node_))
+                print(" " * self.depth + ">>>>")
+                print(ast_unparse(swapout))
+                print(" " * self.depth + "====")
             return result
 
         _visit_X.name = node_name

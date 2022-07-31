@@ -27,16 +27,10 @@ def test_basics():
     exec_helper(random_source)
 
 
-def test_RandomCodeSource(integer):
+def test_RandomCodeSource():
     corpus_paths = list(find_files("corpus/"))
     code_generator = RandomCodeSource(corpus_paths, seed=1234, prettyprinter=False)
 
-    for i in range(0, integer):
-        random_source = code_generator.next_source()
+    random_source = code_generator.next_source()
 
     exec_helper(random_source)
-
-
-def pytest_generate_tests(metafunc):
-    if "integer" in metafunc.fixturenames:
-        metafunc.parametrize("integer", range(1, 5))
