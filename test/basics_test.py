@@ -29,7 +29,7 @@ def test_basics():
 
 def test_RandomCodeSource():
     corpus_paths = list(find_files("corpus/"))
-    code_generator = RandomCodeSource(corpus_paths, seed=1234, prettyprinter=False)
+    code_generator = RandomCodeSource(corpus_paths, seed=1234)
 
     random_source = code_generator.next_source()
 

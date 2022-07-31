@@ -19,7 +19,7 @@ def exec_helper(random_source):
 def test_RandomCodeSource_seed(integer):
     corpus_paths = list(find_files("corpus/"))
     code_generator = RandomCodeSource(
-        corpus_paths, seed=1234 + integer, prettyprinter=False
+        corpus_paths, seed=1234 + integer, log_level="DEBUG"
     )
 
     random_source = code_generator.next_source()
@@ -29,7 +29,7 @@ def test_RandomCodeSource_seed(integer):
 
 def test_RandomCodeSource_sequence(integer):
     corpus_paths = list(find_files("corpus/"))
-    code_generator = RandomCodeSource(corpus_paths, seed=1234, prettyprinter=True)
+    code_generator = RandomCodeSource(corpus_paths, seed=1234, log_level="DEBUG")
 
     for i in range(0, integer):
         random_source = code_generator.next_source()

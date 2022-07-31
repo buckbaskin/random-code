@@ -36,7 +36,7 @@ def test_while():
     ast = str_to_ast(
         """
 while name > 0:
-    print(name)"""
+    pass"""
     )
     assert ["name"] == nested_unpack(ast)
 

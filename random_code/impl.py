@@ -119,19 +119,19 @@ except ImportError:
     from astunparse import unparse as ast_unparse
 
 import code
+import logging
 
 from collections import defaultdict, ChainMap
 from typing import List as tList, Dict as tDict
 from random import Random
 
-from pprint import pprint
-
 UnbundledElementsType = tDict[str, tDict[str, tList[AST]]]
 
 
 class UnbundlingVisitor(NodeVisitor):
-    def __init__(self, *, prettyprinter=False, max_depth=10000):
-        self.prettyprinter = prettyprinter
+    def __init__(self, *, max_depth=10000, log_level="WARN"):
+        self.log = logging.getLogger("UnbundlingVisitor")
+        self.log.setLevel(log_level)
 
         self.depth = 0
         self.max_depth = max_depth
@@ -287,20 +287,19 @@ class UnbundlingVisitor(NodeVisitor):
         return _visit_X_explore
 
     def _post_visit(self, node):
-        if self.prettyprinter:
-            print(" " * self.depth + type(node).__name__)
+        self.log.info(" " * self.depth + type(node).__name__)
         self.depth += 1
         NodeVisitor.generic_visit(self, node)
         self.depth -= 1
 
     def _explore_visit(self, name, node):
-        print("Explore")
-        print(name)
-        print(dir(node))
+        self.log.warn("Explore")
+        self.log.warn(name)
+        self.log.warn(dir(node))
         for k in sorted(list(dir(node))):
             if not k.startswith("__"):
-                print(k, getattr(node, k))
-        print("---")
+                self.log.warn(k, getattr(node, k))
+        self.log.warn("---")
 
     def _known_visit(self, name, nodex):
         for k in self.visited[name]:
@@ -317,7 +316,9 @@ class UnbundlingVisitor(NodeVisitor):
                     for f in node._fields:
                         yield '"%s": []' % (f,)
 
-                print('"%s": {%s},' % (type(node).__name__, ",".join(field_str(node))))
+                self.log.warn(
+                    '"%s": {%s},' % (type(node).__name__, ",".join(field_str(node)))
+                )
             self.missed_parents.add(type(node).__name__)
         else:
             self.missed_children.add(type(node).__name__)
@@ -326,7 +327,7 @@ class UnbundlingVisitor(NodeVisitor):
 
 
 def unbundle_ast(ast: AST):
-    v = UnbundlingVisitor(prettyprinter=False)
+    v = UnbundlingVisitor()
     v.visit(ast)
 
     result = v.unbundled()
@@ -334,10 +335,10 @@ def unbundle_ast(ast: AST):
     try:
         assert len(v.missed_parents) == 0
     except AssertionError:
-        print("Missed AST types to handle")
-        print(sorted(list(v.missed_parents)))
-        print("Optional AST types to handle")
-        print(sorted(list(v.missed_children)))
+        self.log.error("Missed AST types to handle")
+        self.log.error(sorted(list(v.missed_parents)))
+        self.log.error("Optional AST types to handle")
+        self.log.error(sorted(list(v.missed_children)))
         raise
 
     return result
@@ -566,10 +567,10 @@ def nested_unpack(element, top_level=None):
                     yield did
 
             if len(element.keywords) > 0:
-                print(element)
-                print(ast_unparse(element))
-                print(element.keywords)
-                print(ast_unparse(element.keywords))
+                self.log.warn(element)
+                self.log.warn(ast_unparse(element))
+                self.log.warn(element.keywords)
+                self.log.warn(ast_unparse(element.keywords))
                 1 / 0
 
         return list(flattened_ClassDef())
@@ -622,10 +623,10 @@ def nested_unpack(element, top_level=None):
         return list(flattened_List())
     elif isinstance(element, Raise):
         if element.cause is not None:
-            print(element)
-            print(ast_unparse(element))
-            print(element.cause)
-            print(ast_unparse(element.cause))
+            self.log.warn(element)
+            self.log.warn(ast_unparse(element))
+            self.log.warn(element.cause)
+            self.log.warn(ast_unparse(element.cause))
             1 / 0
         return nested_unpack(element.exc)
     elif isinstance(element, Delete):
@@ -651,23 +652,25 @@ def nested_unpack(element, top_level=None):
         return list(flattened_ExceptHandler())
 
     else:
-        print("args unpacking?")
+        self.log.warn("args unpacking?")
         if top_level is not None:
-            print("Top Level")
-            print(top_level)
-            print(ast_unparse(top_level))
-            print("Element")
-        print(element)
-        print(ast_unparse(element))
-        print(element._fields)
+            self.log.warn("Top Level")
+            self.log.warn(top_level)
+            self.log.warn(ast_unparse(top_level))
+            self.log.warn("Element")
+        self.log.warn(element)
+        self.log.warn(ast_unparse(element))
+        self.log.warn(element._fields)
         code.interact(local=dict(ChainMap({"ast_unparse": ast_unparse}, locals())))
         1 / 0
 
 
 class RandomizingTransformer(NodeTransformer):
-    def __init__(self, corpus, *, prettyprinter=False):
+    def __init__(self, corpus, *, log_level="WARN"):
+        self.log = logging.getLogger("RandomizingTransformer")
+        self.log.setLevel(log_level)
+
         self.corpus = corpus
-        self.prettyprinter = prettyprinter
 
         self.depth = 0
         self.max_depth = 10
@@ -726,8 +729,9 @@ class RandomizingTransformer(NodeTransformer):
         if node_type == "Name":
             if proposed_swap.id not in self.scope:
                 self.out_of_scope.add(proposed_swap.id)
-                if self.prettyprinter:
-                    print(" " * self.depth + "Bad Swap: proposed_swap out of scope")
+                self.log.debug(
+                    " " * self.depth + "Bad Swap: proposed_swap out of scope"
+                )
                 return False
 
             # TODO(buck): Why is the original name not in scope?
@@ -740,28 +744,26 @@ class RandomizingTransformer(NodeTransformer):
                 type_to_match == "Any" or self.scope[proposed_swap.id] == type_to_match
             )
             if condition:
-                if self.prettyprinter:
-                    print(
-                        " " * self.depth
-                        + "Good Swap %s and (%s or %s) scope: %s"
-                        % (
-                            proposed_swap.id in self.scope,
-                            type_to_match == "Any",
-                            self.scope[proposed_swap.id] == type_to_match,
-                            self.scope,
-                        )
+                self.log.debug(
+                    " " * self.depth
+                    + "Good Swap %s and (%s or %s) scope: %s"
+                    % (
+                        proposed_swap.id in self.scope,
+                        type_to_match == "Any",
+                        self.scope[proposed_swap.id] == type_to_match,
+                        self.scope,
                     )
+                )
             else:
-                if self.prettyprinter:
-                    print(
-                        " " * self.depth
-                        + "Bad Swap %s and (%s or %s)"
-                        % (
-                            proposed_swap.id in self.scope,
-                            type_to_match == "Any",
-                            self.scope[proposed_swap.id] == type_to_match,
-                        )
+                self.log.debug(
+                    " " * self.depth
+                    + "Bad Swap %s and (%s or %s)"
+                    % (
+                        proposed_swap.id in self.scope,
+                        type_to_match == "Any",
+                        self.scope[proposed_swap.id] == type_to_match,
                     )
+                )
             return condition
 
         # TODO(buck): un-ignore op types, swap op types
@@ -784,9 +786,9 @@ class RandomizingTransformer(NodeTransformer):
                 # assert len(names_to_check) > 0
                 # Counter Example: 'a b c'.split()
             except AssertionError:
-                print("Failed to find names to check")
-                print(proposed_swap)
-                print(ast_unparse(proposed_swap))
+                self.log.error("Failed to find names to check")
+                self.log.error(proposed_swap)
+                self.log.error(ast_unparse(proposed_swap))
                 code.interact(
                     local=dict(ChainMap({"ast_unparse": ast_unparse}, locals()))
                 )
@@ -817,9 +819,9 @@ class RandomizingTransformer(NodeTransformer):
             *arguments.kwonlyargs,
         ]
         if arguments.vararg is not None:
-            print("arguments.vararg")
-            print(arguments.vararg)
-            print(ast_unparse(arguments.vararg))
+            self.log.warn("arguments.vararg")
+            self.log.warn(arguments.vararg)
+            self.log.warn(ast_unparse(arguments.vararg))
             # TODO(add to list of args)
             1 / 0
             args.append(arguments.vararg)
@@ -838,14 +840,13 @@ class RandomizingTransformer(NodeTransformer):
                     break
 
             if node_name == "arguments":
-                if self.prettyprinter:
-                    print(
-                        "Swapped arguments in Scope %s for %s"
-                        % (
-                            [a.arg for a in self.args_to_names(node_)],
-                            [a.arg for a in self.args_to_names(swapout)],
-                        )
+                self.log.debug(
+                    "Swapped arguments in Scope %s for %s"
+                    % (
+                        [a.arg for a in self.args_to_names(node_)],
+                        [a.arg for a in self.args_to_names(swapout)],
                     )
+                )
                 for start_arg in self.args_to_names(node_):
                     del self.scope[start_arg.arg]
 
@@ -859,8 +860,8 @@ class RandomizingTransformer(NodeTransformer):
                         1 / 0
                     self.scope[arg.arg] = type_
                     if arg.annotation is not None or arg.type_comment is not None:
-                        print("arguments - Typed Scope")
-                        pprint(self.scope)
+                        self.log.debug("arguments - Typed Scope")
+                        self.log.debug(self.scope)
 
             # TODO(buck): Lambda
             # TODO(buck): GeneratorExpressions
@@ -890,8 +891,8 @@ class RandomizingTransformer(NodeTransformer):
                         1 / 0
                     self.scope[arg.arg] = type_
                     if arg.annotation is not None or arg.type_comment is not None:
-                        print("FunctionDef - Typed Scope")
-                        pprint(self.scope)
+                        self.log.debug("FunctionDef - Typed Scope")
+                        self.log.debug(self.scope)
 
             result = swapout
             # TODO(buck): Remove carve-out for arg so we can explore replacing aspects of the arg once we have typing
@@ -901,15 +902,14 @@ class RandomizingTransformer(NodeTransformer):
             if node_name == "FunctionDef":
                 self.scope = self.scope.parents
 
-            if self.prettyprinter:
-                print(
-                    " " * self.depth + "Swapped " + str(node_) + " for " + str(result)
-                )
-                print(" " * self.depth + "====")
-                print(ast_unparse(node_))
-                print(" " * self.depth + ">>>>")
-                print(ast_unparse(swapout))
-                print(" " * self.depth + "====")
+            self.log.debug(
+                " " * self.depth + "Swapped " + str(node_) + " for " + str(result)
+            )
+            self.log.debug(" " * self.depth + "====")
+            self.log.debug(ast_unparse(node_))
+            self.log.debug(" " * self.depth + ">>>>")
+            self.log.debug(ast_unparse(swapout))
+            self.log.debug(" " * self.depth + "====")
             return result
 
         _visit_X.name = node_name
@@ -929,8 +929,7 @@ class RandomizingTransformer(NodeTransformer):
         return _visit_X_ignore
 
     def _post_visit(self, node):
-        if self.prettyprinter:
-            print(" " * self.depth + type(node).__name__ + " " + str(self.scope))
+        self.log.debug(" " * self.depth + type(node).__name__ + " " + str(self.scope))
 
         self.depth += 1
         result = NodeTransformer.generic_visit(self, node)
@@ -941,20 +940,22 @@ class RandomizingTransformer(NodeTransformer):
     def generic_visit(self, node):
         node_type_str = type(node).__name__
         name = "visit_%s" % (node_type_str,)
-        # print("generic_visit: Providing default ignore case for %s" % (node_type_str,))
+        self.log.info(
+            "generic_visit: Providing default ignore case for %s" % (node_type_str,)
+        )
         setattr(self, name, self._ignore_function_factory(node_type_str))
         return self._post_visit(node)
 
 
-def the_sauce(gen: BagOfConcepts, start: Module, *, prettyprinter=False):
-    transformer = RandomizingTransformer(gen, prettyprinter=prettyprinter)
+def the_sauce(gen: BagOfConcepts, start: Module, *, log_level="WARN"):
+    transformer = RandomizingTransformer(gen, log_level=log_level)
     result = transformer.visit(start)
     assert result is not None
     # result = fix_missing_locations(result)
     return result
 
 
-def make_asts(corpus: tList[str], *, prettyprinter=False):
+def make_asts(corpus: tList[str]):
     ast_set = {}
 
     syntax_errors = []
@@ -971,10 +972,10 @@ def make_asts(corpus: tList[str], *, prettyprinter=False):
             except SyntaxError:
                 syntax_errors.append(corpus_file_path)
 
-    if prettyprinter and len(syntax_errors) > 0:
-        print("Syntax Mishaps")
-        print(syntax_errors[:5])
-        print("...")
+    if len(syntax_errors) > 0:
+        self.log.debug("Syntax Mishaps")
+        self.log.debug(syntax_errors[:5])
+        self.log.debug("...")
 
     return ast_set
 
@@ -992,9 +993,9 @@ def find_files(directory: str):
 
 
 class RandomCodeSource(object):
-    def __init__(self, corpus: tList[str], seed=1, *, prettyprinter=False):
+    def __init__(self, corpus: tList[str], seed=1, *, log_level="WARN"):
         assert len(corpus) > 0
-        self.prettyprinter = prettyprinter
+        self.log_level = log_level
 
         ast_set = make_asts(corpus)
         raw_materials = merge_unbundled_asts(ast_set.values())
@@ -1002,7 +1003,7 @@ class RandomCodeSource(object):
 
     def next_source(self):
         starter_home = next(self.gen.Module())
-        result = the_sauce(self.gen, starter_home, prettyprinter=self.prettyprinter)
+        result = the_sauce(self.gen, starter_home, log_level=self.log_level)
         text_result = ast_unparse(result)
         return text_result
 
