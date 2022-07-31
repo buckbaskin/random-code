@@ -101,10 +101,10 @@ def test_Delete_member():
 def test_FunctionDef_typing():
     ast = str_to_ast(
         """
-def simple(x: name):
+def simple(x: target_name):
     pass"""
     )
-    assert ["name"] == nested_unpack(ast)
+    assert ["target_name"] == nested_unpack(ast)
 
 
 def test_FunctionDef_decorator():

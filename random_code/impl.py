@@ -580,6 +580,19 @@ def nested_unpack(element, top_level=None):
                 for did in nested_unpack(decorator, top_level):
                     yield did
 
+            all_args = [
+                *element.args.posonlyargs,
+                *element.args.args,
+                *element.args.kwonlyargs,
+            ]
+            if element.args.vararg is not None:
+                all_args.append(element.args.vararg)
+            if element.args.kwarg is not None:
+                all_args.append(element.args.kwarg)
+            for a in all_args:
+                for aid in nested_unpack(a.annotation, top_level):
+                    yield aid
+
         return list(flattened_FunctionDef())
     elif isinstance(element, keyword):
         return nested_unpack(element.value, top_level)
