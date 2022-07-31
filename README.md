@@ -38,12 +38,9 @@ def test_no_single_floats_in_range(a):
     with ValueError(f'{object}.MyObj'):
         'Hypothesis is a library for writing unit tests which are parametrized by\n\nsome source of data.\n\n\n\nIt verifies your code against a wide range of input and minimizes any\n\nfailing examples it finds.\n\n'
 
-def test_fails_health_check_for_slow_draws(*, i: target=(kwargs, kwargs, None), v=None, **x):
+def test_fails_health_check_for_slow_draws(*, i: int=(object,), target: Optional[Bundle[Ex]]=None, **x):
 
-    def run_test():
-        try:
-            import given
-        except AttributeError:
-            ValueError = AttributeError()
+    def func_a(c):
+        pass
 
 ```

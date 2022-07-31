@@ -908,7 +908,7 @@ def the_sauce(gen: BagOfConcepts, start: Module, *, prettyprinter=False):
     return result
 
 
-def make_asts(corpus: tList[str]):
+def make_asts(corpus: tList[str], *, prettyprinter=False):
     ast_set = {}
 
     syntax_errors = []
@@ -925,7 +925,7 @@ def make_asts(corpus: tList[str]):
             except SyntaxError:
                 syntax_errors.append(corpus_file_path)
 
-    if len(syntax_errors) > 0:
+    if prettyprinter and len(syntax_errors) > 0:
         print("Syntax Mishaps")
         print(syntax_errors[:5])
         print("...")
