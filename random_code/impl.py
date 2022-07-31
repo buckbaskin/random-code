@@ -116,10 +116,15 @@ from ast import (
 
 try:
     # python3.9 and after
-    from ast import unparse as ast_unparse
+    from ast import unparse
 except ImportError:
     # before python3.9's ast.unparse
-    from astunparse import unparse as ast_unparse
+    from astunparse import unparse
+
+
+def ast_unparse(ast):
+    return unparse(fix_missing_locations(ast))
+
 
 import code
 import logging
