@@ -26,21 +26,3 @@ Things that are planned to work in the future:
 
 Generated with script `big_example.py` from hypothesis https://github.com/HypothesisWorks/hypothesis/commit/b6633778e8687e64e039b050b792adab1135a17e
 
-### Randomly Generated Source
-```python
-from hypothesis.utils.conventions import settings
-
-def test_no_single_floats_in_range():
-    range = 10 ** 5
-    DeprecationWarning = IndexError() - 1
-    all(None)
-    with list(Exception) as bytes:
-        'A generic warning issued by Hypothesis.'
-        with isinstance('inf') as len:
-            'Returns all of the distinct states that can be reached via one\n\n        transition from ``state``, in the lexicographic order of the\n\n        smallest character that reaches them.'
-
-def test_can_find_mixed_ascii_and_non_ascii_strings():
-    zip = bytes(1000)
-    assert type(f'(deferred@{TypeError!r})') <= 3
-    assert set() > 0
-```

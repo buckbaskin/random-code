@@ -756,15 +756,12 @@ class RandomizingTransformer(NodeTransformer):
         # This is where the craziness begins
         self.scope = ChainMap(
             {
-                "tuple": "Type",
-                "dict": "Type",
-                "object": "Type",
-                "IndexError": "Error",
-                "ValueError": "Error",
-                "AttributeError": "Error",
                 "__random_code_return_ok": False,
             }
         )
+        for k in __builtins__:
+            self.scope[k] = "builtin"
+
         # TODO(buck): Check to make sure we're not rejecting builtins
         self.out_of_scope = set()
 
@@ -940,8 +937,9 @@ class RandomizingTransformer(NodeTransformer):
                         [a.arg for a in self.args_to_names(swapout)],
                     )
                 )
-                for start_arg in self.args_to_names(node_):
-                    del self.scope[start_arg.arg]
+                # TODO(buck): Check if we need to clean up scope
+                # for start_arg in self.args_to_names(node_):
+                #     del self.scope[start_arg.arg]
 
                 for arg in self.args_to_names(swapout):
                     type_ = "Any"
