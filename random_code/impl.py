@@ -132,6 +132,7 @@ import logging
 from collections import defaultdict, ChainMap, deque
 from typing import List as tList, Dict as tDict
 from random import Random
+from functools import partial, wraps
 
 UnbundledElementsType = tDict[str, tDict[str, tList[AST]]]
 
@@ -273,30 +274,30 @@ class UnbundlingVisitor(NodeVisitor):
             setattr(self, name, self._explore_function_factory(k))
 
     def _helper_function_factory(self, node_name):
-        def _visit_X(node_):
+        def _visit_X(self, node_):
             self._known_visit(node_name, node_)
             self._post_visit(node_)
 
         _visit_X.name = node_name
         _visit_X.__name__ = node_name
-        return _visit_X
+        return partial(_visit_X, self)
 
     def _ignore_function_factory(self, node_name):
-        def _visit_X_ignore(node_):
+        def _visit_X_ignore(self, node_):
             self._post_visit(node_)
 
         _visit_X_ignore.name = node_name
         _visit_X_ignore.__name__ = node_name
-        return _visit_X_ignore
+        return partial(_visit_X_ignore, self)
 
     def _explore_function_factory(self, node_name):
-        def _visit_X_explore(node_):
+        def _visit_X_explore(self, node_):
             self._explore_visit(node_name, node_)
             self.generic_visit(node_)
 
         _visit_X_explore.name = node_name
         _visit_X_explore.__name__ = node_name
-        return _visit_X_explore
+        return partial(_visit_X_explore, self)
 
     def _post_visit(self, node):
         log.info(" " * self.depth + " Processed " + type(node).__name__)
@@ -740,14 +741,22 @@ def nested_unpack(element, top_level=None):
         1 / 0
 
 
-def littering(obj, name, to_name):
+def littering(name, to_name):
+    """
+    Wraps a member function to assign a specified member `name` to `to_name` on the output of the function call.
+
+    For example, used to append the scope to each member of the AST to enable asserting on scope properties in testing
+    """
+
     def wrapper(func):
-        def wrapped(*args, **kwargs):
-            result = func(*args, **kwargs)
-            setattr(result, to_name, getattr(obj, name))
+        @wraps(func)
+        def wrapped(self, *args, **kwargs):
+            result = func(self, *args, **kwargs)
+            setattr(result, to_name, getattr(self, name))
             return result
+
         return wrapped
-    # TODO(buck): functool wraps
+
     return wrapper
 
 
@@ -923,15 +932,13 @@ class RandomizingTransformer(NodeTransformer):
         return args
 
     def _helper_function_factory(self, node_name):
-        @littering(self, 'scope', '_ending_scope')
-        def _visit_X(node_):
+        @littering("scope", "_ending_scope")
+        def _visit_X(self, node_):
             log.info("Visiting into %s", node_name)
             assert node_name != "FunctionDef"
 
             if self.depth > self.max_depth:
                 log.info("%s Ending due to max depth", node_name)
-                log.debug('%s gets an ending scope' % (type(result),))
-                node_._ending_scope = dict(self.scope)
                 return node_
 
             for swapout in getattr(self.corpus, node_name)():
@@ -942,8 +949,6 @@ class RandomizingTransformer(NodeTransformer):
                 # no valid swapout found
                 # TODO(buck): In theory, we should always have at least one from the corpus?
                 log.debug("%s Ending due to no valid swap found", node_name)
-                log.debug('%s gets an ending scope' % (type(result),))
-                node_._ending_scope = dict(self.scope)
                 return node_
 
             if node_name == "arguments":
@@ -988,7 +993,6 @@ class RandomizingTransformer(NodeTransformer):
             if node_name not in ["arg"]:
                 result = self._post_visit(swapout)
 
-
             ## Start If Inspection
             if node_name == "If":
                 log.debug("\n===\nIf return evaluation")
@@ -1028,16 +1032,14 @@ class RandomizingTransformer(NodeTransformer):
                 log.debug(" " * self.depth + str(swapout))
             log.debug(" " * self.depth + "====")
 
-            log.debug('%s gets an ending scope' % (type(result),))
-            result._ending_scope = dict(self.scope)
             return result
 
         _visit_X.name = node_name
         _visit_X.__name__ = node_name
-        return _visit_X
+        return partial(_visit_X, self)
 
     def _ignore_function_factory(self, node_name):
-        def _visit_X_ignore(node_):
+        def _visit_X_ignore(self, node_):
             if self.depth > self.max_depth:
                 return node_
 
@@ -1046,7 +1048,7 @@ class RandomizingTransformer(NodeTransformer):
 
         _visit_X_ignore.name = node_name
         _visit_X_ignore.__name__ = node_name
-        return _visit_X_ignore
+        return partial(_visit_X_ignore, self)
 
     def _post_visit(self, node):
         log.debug(" " * self.depth + type(node).__name__ + " " + str(self.scope))
@@ -1068,10 +1070,10 @@ class RandomizingTransformer(NodeTransformer):
         return self._post_visit(node)
 
     # TODO(buck) @depth_protection() # increment depth, check max depth, decrement depth on function exit
-    @littering(self, 'scope', '_ending_scope')
+    @littering("scope", "_ending_scope")
     def visit_FunctionDef(self, node_):
         if self.depth > self.max_depth:
-            log.debug('%s gets an ending scope' % (type(result),))
+            log.debug("%s gets an ending scope (littering)" % (type(result),))
             node_._ending_scope = dict(self.scope)
             return node_
 
@@ -1102,7 +1104,7 @@ class RandomizingTransformer(NodeTransformer):
 
         # decorator_list
         for i in range(len(swapout.decorator_list)):
-            log.info('Visiting swapout.decorator[%s]', i)
+            log.info("Visiting swapout.decorator[%s]", i)
             swapout.decorator_list[i] = NodeTransformer.generic_visit(
                 self, swapout.decorator_list[i]
             )
@@ -1115,7 +1117,7 @@ class RandomizingTransformer(NodeTransformer):
             assert swapout.returns is not None
             swapout.returns._ending_scope = dict(self.scope)
         # args
-        log.info('Visiting swapout.args')
+        log.info("Visiting swapout.args")
         swapout.args = NodeTransformer.generic_visit(self, swapout.args)
         assert swapout.args is not None
         swapout.args._ending_scope = dict(self.scope)
@@ -1163,8 +1165,6 @@ class RandomizingTransformer(NodeTransformer):
             log.debug(" " * self.depth + str(swapout))
         log.debug(" " * self.depth + "====")
 
-        log.debug('%s gets an ending scope' % (type(result),))
-        result._ending_scope = dict(self.scope)
         return result
 
 

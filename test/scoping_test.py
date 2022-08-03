@@ -28,7 +28,7 @@ def build_transformer(ast):
     raw_materials = merge_unbundled_asts(ast_set.values())
     gen = BagOfConcepts(raw_materials, seed=0)
 
-    transformer = RandomizingTransformer(corpus=gen, log_level='DEBUG')
+    transformer = RandomizingTransformer(corpus=gen, log_level="DEBUG")
     return transformer
 
 
@@ -44,4 +44,4 @@ def main(i: i):
     assert isinstance(result, FunctionDef)
     args = result.args
     assert isinstance(args, arguments)
-    assert 'i' not in args._ending_scope
+    assert "i" not in args._ending_scope
