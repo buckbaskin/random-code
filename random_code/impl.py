@@ -129,6 +129,7 @@ def ast_unparse(ast):
 import code
 import logging
 
+from abc import ABC
 from collections import defaultdict, ChainMap, deque
 from typing import List as tList, Dict as tDict
 from random import Random
@@ -139,6 +140,24 @@ UnbundledElementsType = tDict[str, tDict[str, tList[AST]]]
 
 log = logging.getLogger(__name__)
 log.setLevel("WARN")
+
+
+class NotNameParent(ABC):
+    _doesnt_contain_names = {
+        "Break",
+        "Constant",
+        "Import",
+        "ImportFrom",
+        "JoinedStr",
+        "NoneType",
+        "Pass",
+    }
+
+    @classmethod
+    def __subclasshook__(cls, C):
+        name = C.__name__
+        log.debug("NotNameParent.__subclasshook__ %s", name)
+        return name in cls._doesnt_contain_names
 
 
 class UnbundlingVisitor(NodeVisitor):
@@ -471,38 +490,42 @@ def contains_return(element, top_level=None):
 
 
 def nested_unpack(element, top_level=None):
+    assert not isinstance(element, list)
+
     # TODO(buck): Make this a while loop with controlled depth
-    if element is None:
+    if isinstance(element, NotNameParent):
         return []
 
     if isinstance(element, Name):
         return [element.id]
     elif (
-        isinstance(element, Constant)
-        or isinstance(element, Pass)
-        or isinstance(element, Break)
+        isinstance(element, Attribute)
+        or isinstance(element, Index)
+        or isinstance(element, Starred)
+        or isinstance(element, Subscript)
     ):
-        return []
-    elif isinstance(element, ImportFrom) or isinstance(element, Import):
-        # TODO(buck): Maybe re-evaluate unpacking imports?
-        return []
-    elif isinstance(element, Attribute) or isinstance(element, Index):
         return nested_unpack(element.value, top_level)
-    elif hasattr(element, "func"):
-        return nested_unpack(element.func, top_level)
+    elif isinstance(element, Call):
+
+        def flattened_Call():
+            for fid in nested_unpack(element.func, top_level):
+                yield fid
+            for arg in element.args:
+                for aid in nested_unpack(arg, top_level):
+                    yield aid
+            for keyword in element.keywords:
+                for kid in nested_unpack(keyword, top_level):
+                    yield kid
+
+        return list(flattened_Call())
     elif isinstance(element, Lambda):
-        # TODO(buck): check underlying
-        return []
+        return nested_unpack(element.body, top_level)
     elif isinstance(element, List):
         # TODO(buck): check underlying
         return []
     elif isinstance(element, Tuple):
         # TODO(buck): check underlying
         return []
-    elif isinstance(element, Starred):
-        return nested_unpack(element.value, top_level)
-    elif isinstance(element, Subscript):
-        return nested_unpack(element.value, top_level)
     elif (
         isinstance(element, If)
         or isinstance(element, IfExp)
@@ -555,8 +578,6 @@ def nested_unpack(element, top_level=None):
                     yield kid
 
         return list(flattened_Set())
-    elif isinstance(element, JoinedStr):
-        return []
     elif isinstance(element, GeneratorExp):
 
         def flattened_GeneratorExp():
@@ -643,10 +664,10 @@ def nested_unpack(element, top_level=None):
                     yield did
 
             if len(element.keywords) > 0:
-                log.warning(" " * self.depth + element)
-                log.warning(" " * self.depth + ast_unparse(element))
-                log.warning(" " * self.depth + element.keywords)
-                log.warning(" " * self.depth + ast_unparse(element.keywords))
+                log.warning(element)
+                log.warning(ast_unparse(element))
+                log.warning(element.keywords)
+                log.warning(ast_unparse(element.keywords))
                 1 / 0
 
         return list(flattened_ClassDef())
@@ -699,10 +720,10 @@ def nested_unpack(element, top_level=None):
         return list(flattened_List())
     elif isinstance(element, Raise):
         if element.cause is not None:
-            log.warning(" " * self.depth + element)
-            log.warning(" " * self.depth + ast_unparse(element))
-            log.warning(" " * self.depth + element.cause)
-            log.warning(" " * self.depth + ast_unparse(element.cause))
+            log.warning(element)
+            log.warning(ast_unparse(element))
+            log.warning(element.cause)
+            log.warning(ast_unparse(element.cause))
             1 / 0
         return nested_unpack(element.exc)
     elif isinstance(element, Delete):
@@ -728,16 +749,18 @@ def nested_unpack(element, top_level=None):
         return list(flattened_ExceptHandler())
 
     else:
-        log.warning(" " * self.depth + "args unpacking?")
+        log.warning("args unpacking?")
         if top_level is not None:
-            log.warning(" " * self.depth + "Top Level")
-            log.warning(" " * self.depth + top_level)
-            log.warning(" " * self.depth + ast_unparse(top_level))
-            log.warning(" " * self.depth + "Element")
-        log.warning(" " * self.depth + element)
-        log.warning(" " * self.depth + ast_unparse(element))
-        log.warning(" " * self.depth + element._fields)
-        code.interact(local=dict(ChainMap({"ast_unparse": ast_unparse}, locals())))
+            log.warning("Top Level")
+            log.warning(top_level)
+            log.warning(ast_unparse(top_level))
+            log.warning("Element")
+        log.warning(element)
+        try:
+            log.warning(ast_unparse(element))
+            log.warning(element._fields)
+        except AttributeError:
+            pass
         1 / 0
 
 
