@@ -1012,15 +1012,6 @@ class RandomizingTransformer(NodeTransformer):
                         log.debug(" " * self.depth + "arguments - Typed Scope")
                         log.debug(" " * self.depth + str(self.scope))
 
-            # TODO(buck): Lambda
-            # TODO(buck): GeneratorExpressions
-            # TODO(buck): ListComps
-            # TODO(buck): Assignment
-            # TODO(buck): DictComps
-            # TODO(buck): SetComps
-            # TODO(buck): ExceptHandler
-            # TODO(buck): With
-            # TODO(buck): ClassDef
             # TODO(buck): check/sync scoping implementation with list of new def functionality
 
             result = swapout
