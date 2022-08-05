@@ -1,20 +1,24 @@
 from random_code import nested_unpack
 
 from ast import (
-    Raise,
     BinOp,
     BoolOp,
+    Break,
     Call,
-    Set,
     Compare,
     Dict,
-    JoinedStr,
     DictComp,
     Expr,
+    GeneratorExp,
     IfExp,
+    Index,
+    JoinedStr,
     ListComp,
     Module,
     Pass,
+    Raise,
+    Return,
+    Set,
     SetComp,
     Subscript,
     UnaryOp,
@@ -48,6 +52,12 @@ def test_assert():
 
 
 # Break
+def test_Break():
+    ast = str_to_ast("break")
+    assert isinstance(ast, Break)
+    assert [] == nested_unpack(ast)
+
+
 # withitem
 def test_withitem():
     ast = str_to_ast(
@@ -74,7 +84,6 @@ def test_Assign():
     assert ["name"] == nested_unpack(ast)
 
 
-# Attribute
 # BinOp
 def test_BinOp_none():
     ast = _strip_expr(str_to_ast("""1 | False"""))
@@ -209,10 +218,38 @@ def test_DictComp():
     assert ["name"] == nested_unpack(ast)
 
 
-# dump
-# Expr
 # ExceptHandler
+def test_ExceptHandler():
+    ast = str_to_ast(
+        """
+try:
+    pass
+except NameError:
+    pass
+"""
+    )
+    assert ["NameError"] == nested_unpack(ast)
+
+
 # For
+def test_For_loop():
+    ast = str_to_ast(
+        """
+for x in name:
+    pass"""
+    )
+    assert ["name"] == nested_unpack(ast)
+
+
+def test_For_body():
+    ast = str_to_ast(
+        """
+for x in [1, 2, 3]:
+    name(x)"""
+    )
+    assert ["name"] == nested_unpack(ast)
+
+
 # FormattedValue
 # FunctionDef
 def test_FunctionDef_typing():
@@ -235,7 +272,22 @@ def simple(x):
 
 
 # GeneratorExp
+def test_GeneratorExp():
+    ast = _strip_expr(str_to_ast("(x**2 for x in name)"))
+    assert isinstance(ast, GeneratorExp)
+    assert ["name"] == nested_unpack(ast)
+
+
 # If
+def test_If():
+    ast = str_to_ast(
+        """
+if name():
+    pass"""
+    )
+    assert ["name"] == nested_unpack(ast)
+
+
 # IfExp
 def test_IfExp():
     ast = _strip_expr(str_to_ast("""0 if name else 1"""))
@@ -256,9 +308,14 @@ def test_ImportFrom():
 
 
 # Index
+def test_Index():
+    ast = _strip_expr(str_to_ast('"abc"[name]'))
+    assert ["name"] == nested_unpack(ast)
+
+
 # JoinedStr
 def test_JoinedStr():
-    ast = str_to_ast("'a' 'b'")
+    ast = _strip_expr(str_to_ast("'a' 'b'"))
     assert isinstance(ast, JoinedStr)
     assert [] == nested_unpack(ast)
 
@@ -305,7 +362,14 @@ def test_ListComp():
 
 
 # Module
-# Name
+def test_Module():
+    import ast
+
+    ast_ = ast.parse("pass")
+    assert isinstance(ast_, Module)
+    assert [] == nested_unpack(ast_)
+
+
 # Raise
 def test_Raise():
     ast = str_to_ast("raise ValueError(name)")
@@ -314,6 +378,12 @@ def test_Raise():
 
 
 # Return
+def test_Return():
+    ast = str_to_ast("return name")
+    assert isinstance(ast, Return)
+    assert ["name"] == nested_unpack(ast)
+
+
 # Set
 def test_Set():
     ast = _strip_expr(str_to_ast("{1, name, 3}"))

@@ -492,6 +492,10 @@ def contains_return(element, top_level=None):
 def nested_unpack(element, top_level=None):
     assert not isinstance(element, list)
 
+    if isinstance(element, JoinedStr):
+        print(element)
+        print(ast_unparse(element))
+        1 / 0
     # TODO(buck): Make this a while loop with controlled depth
     if isinstance(element, NotNameParent):
         return []
@@ -747,6 +751,14 @@ def nested_unpack(element, top_level=None):
                     yield eid
 
         return list(flattened_ExceptHandler())
+    elif isinstance(element, Module):
+
+        def flattened_Module():
+            for expr in element.body:
+                for eid in nested_unpack(expr, top_level):
+                    yield eid
+
+        return list(flattened_Module())
 
     else:
         log.warning("args unpacking?")
