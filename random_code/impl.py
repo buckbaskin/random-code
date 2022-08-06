@@ -638,7 +638,7 @@ def nested_unpack(element, top_level=None):
     elif isinstance(element, Expr):
         return nested_unpack(element.value, top_level)
     elif isinstance(element, With):
-
+        # TODO(buck): The name x in: "with open('f') as x" is currently incorrectly unswappable because I require it to be in scope but it doesn't need to be
         def flattened_With():
             for withitem in element.items:
                 for cid in nested_unpack(withitem.context_expr, top_level):
@@ -782,6 +782,7 @@ def littering(name, to_name):
         @wraps(func)
         def wrapped(self, *args, **kwargs):
             result = func(self, *args, **kwargs)
+            log.info("littering %s.%s with %s", result, to_name, name)
             setattr(result, to_name, getattr(self, name))
             return result
 
@@ -966,6 +967,7 @@ class RandomizingTransformer(NodeTransformer):
         def _visit_X(self, node_):
             log.info("Visiting into %s %s", node_name, ast_unparse(node_))
             assert node_name != "FunctionDef"
+            assert node_name != "With"
 
             if self.depth > self.max_depth:
                 log.info("%s Ending due to max depth", node_name)
@@ -1081,6 +1083,7 @@ class RandomizingTransformer(NodeTransformer):
         self.depth -= 1
         return result
 
+    @littering("scope", "_ending_scope")
     def generic_visit(self, node):
         node_type_str = type(node).__name__
         name = "visit_%s" % (node_type_str,)
@@ -1095,8 +1098,6 @@ class RandomizingTransformer(NodeTransformer):
     @littering("scope", "_ending_scope")
     def visit_FunctionDef(self, node_):
         if self.depth > self.max_depth:
-            log.debug("%s gets an ending scope (littering)" % (type(result),))
-            node_._ending_scope = dict(self.scope)
             return node_
 
         for swapout in self.corpus.FunctionDef():
@@ -1187,6 +1188,80 @@ class RandomizingTransformer(NodeTransformer):
             log.debug(" " * self.depth + str(swapout))
         log.debug(" " * self.depth + "====")
 
+        return result
+
+    @littering("scope", "_ending_scope")
+    def visit_With(self, node_):
+        node_name = "With"
+        log.info("Visiting into %s %s", node_name, ast_unparse(node_))
+
+        if self.depth > self.max_depth:
+            log.info("%s Ending due to max depth", node_name)
+            return node_
+
+        for swapout in getattr(self.corpus, node_name)():
+            if self.valid_swap(node_, swapout):
+                # Let python scoping drop this variable
+                break
+        else:
+            # no valid swapout found
+            # TODO(buck): In theory, we should always have at least one from the corpus?
+            log.debug("%s Ending due to no valid swap found", node_name)
+            return node_
+
+        self.scope = self.scope.new_child()
+        self.depth += 1
+        log.debug(" " * self.depth + "Scope at With start %s" % (self.scope,))
+
+        # Scoping order
+        # withitems.option_vars
+        # body
+
+        # withitems list (analagous to FunctionDef args)
+        log.info("Visiting swapout.items")
+        for i in range(len(swapout.items)):
+            log.info("Visiting swapout.items[%s]", i)
+            swapout.items[i] = NodeTransformer.generic_visit(self, swapout.items[i])
+            assert swapout.items[i] is not None
+            swapout.items[i]._ending_scope = dict(self.scope)
+
+        for withitem in swapout.items:
+            type_ = "Any"
+            # TODO(buck): Can withitem optional vars be typed? They'd take on the type of the result of the associated context_expr
+            if withitem.optional_vars is not None:
+                vars_to_scope = withitem.optional_vars
+                if isinstance(vars_to_scope, Name):
+                    self.scope[vars_to_scope.id] = type_
+                else:
+                    # TODO(buck) handle other allowed assignment contexts later
+                    1 / 0
+        # body
+        for i in range(len(swapout.body)):
+            log.info("Visiting swapout.body[%s]", i)
+            swapout.body[i] = NodeTransformer.generic_visit(self, swapout.body[i])
+            assert swapout.body[i] is not None
+            swapout.body[i]._ending_scope = dict(self.scope)
+
+        result = swapout
+
+        log.debug(" " * self.depth + "Scope at With end %s" % (self.scope,))
+        self.depth -= 1
+        self.scope = self.scope.parents
+
+        log.debug(" " * self.depth + "Swapped " + str(node_) + " for " + str(result))
+        log.debug(" " * self.depth + "====")
+        try:
+            log.debug(" " * self.depth + ast_unparse(node_))
+        except RecursionError:
+            log.debug(" " * self.depth + str(node_))
+        log.debug(" " * self.depth + ">>>>")
+        try:
+            log.debug(" " * self.depth + ast_unparse(swapout))
+        except RecursionError:
+            log.debug(" " * self.depth + str(swapout))
+        log.debug(" " * self.depth + "====")
+
+        log.info("Visiting out  %s", node_name)
         return result
 
 

@@ -96,7 +96,7 @@ except ValueError as ve:
 
 def test_With():
     input_text = """
-with open('f') as f:
+with 'f' as f:
     pass
 """
     ast = str_to_ast(input_text)
@@ -105,6 +105,7 @@ with open('f') as f:
 
     assert isinstance(result, With)
     assert "f" in result.body[0]._ending_scope
+    assert "f" not in result._ending_scope
 
 
 def test_ListComp():
