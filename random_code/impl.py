@@ -53,6 +53,7 @@ from ast import (
     With,
     withitem,
     Yield,
+    comprehension,
 )
 
 ### Feature List
@@ -148,6 +149,7 @@ class NotNameParent(ABC):
         "Constant",
         "Import",
         "ImportFrom",
+        # TODO(buck): check JoinedStr
         "JoinedStr",
         "NoneType",
         "Pass",
@@ -156,7 +158,6 @@ class NotNameParent(ABC):
     @classmethod
     def __subclasshook__(cls, C):
         name = C.__name__
-        log.debug("NotNameParent.__subclasshook__ %s", name)
         return name in cls._doesnt_contain_names
 
 
@@ -492,10 +493,6 @@ def contains_return(element, top_level=None):
 def nested_unpack(element, top_level=None):
     assert not isinstance(element, list)
 
-    if isinstance(element, JoinedStr):
-        print(element)
-        print(ast_unparse(element))
-        1 / 0
     # TODO(buck): Make this a while loop with controlled depth
     if isinstance(element, NotNameParent):
         return []
@@ -589,11 +586,8 @@ def nested_unpack(element, top_level=None):
                 yield elt_id
 
             for gen in element.generators:
-                for if_ in gen.ifs:
-                    for ifid in nested_unpack(if_, top_level):
-                        yield ifid
-                for iid in nested_unpack(gen.iter, top_level):
-                    yield iid
+                for gid in nested_unpack(gen, top_level):
+                    yield gid
 
         return list(flattened_GeneratorExp())
     elif isinstance(element, ListComp):
@@ -604,11 +598,8 @@ def nested_unpack(element, top_level=None):
                 yield elt_id
 
             for gen in element.generators:
-                for if_ in gen.ifs:
-                    for ifid in nested_unpack(if_, top_level):
-                        yield ifid
-                for iid in nested_unpack(gen.iter, top_level):
-                    yield iid
+                for gid in nested_unpack(gen, top_level):
+                    yield gid
 
         return list(flattened_ListComp())
     elif isinstance(element, DictComp):
@@ -616,11 +607,8 @@ def nested_unpack(element, top_level=None):
         def flattened_DictComp():
             # TODO(buck): check key, value
             for gen in element.generators:
-                for if_ in gen.ifs:
-                    for ifid in nested_unpack(if_, top_level):
-                        yield ifid
-                for iid in nested_unpack(gen.iter, top_level):
-                    yield iid
+                for gid in nested_unpack(gen, top_level):
+                    yield gid
 
         return list(flattened_DictComp())
     elif isinstance(element, SetComp):
@@ -631,13 +619,20 @@ def nested_unpack(element, top_level=None):
                 yield elt_id
 
             for gen in element.generators:
-                for if_ in gen.ifs:
-                    for ifid in nested_unpack(if_, top_level):
-                        yield ifid
-                for iid in nested_unpack(gen.iter, top_level):
-                    yield iid
+                for gid in nested_unpack(gen, top_level):
+                    yield gid
 
         return list(flattened_SetComp())
+    elif isinstance(element, comprehension):
+
+        def flattened_comprehension():
+            for if_ in element.ifs:
+                for ifid in nested_unpack(if_, top_level):
+                    yield ifid
+            for iid in nested_unpack(element.iter, top_level):
+                yield iid
+
+        return list(flattened_comprehension())
     elif isinstance(element, Yield) or isinstance(element, Return):
         return nested_unpack(element.value, top_level)
     elif isinstance(element, Expr):
@@ -969,7 +964,7 @@ class RandomizingTransformer(NodeTransformer):
     def _helper_function_factory(self, node_name):
         @littering("scope", "_ending_scope")
         def _visit_X(self, node_):
-            log.info("Visiting into %s", node_name)
+            log.info("Visiting into %s %s", node_name, ast_unparse(node_))
             assert node_name != "FunctionDef"
 
             if self.depth > self.max_depth:
@@ -1058,6 +1053,7 @@ class RandomizingTransformer(NodeTransformer):
                 log.debug(" " * self.depth + str(swapout))
             log.debug(" " * self.depth + "====")
 
+            log.info("Visiting out  %s", node_name)
             return result
 
         _visit_X.name = node_name

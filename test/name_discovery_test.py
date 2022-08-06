@@ -315,9 +315,9 @@ def test_Index():
 
 # JoinedStr
 def test_JoinedStr():
-    ast = _strip_expr(str_to_ast("'a' 'b'"))
+    ast = _strip_expr(str_to_ast("f'value{i}'"))
     assert isinstance(ast, JoinedStr)
-    assert [] == nested_unpack(ast)
+    assert ["i"] == nested_unpack(ast)
 
 
 # keyword

@@ -2,15 +2,23 @@ from random_code.impl import merge_unbundled_asts, BagOfConcepts, RandomizingTra
 
 from ast import (
     arguments,
+    ClassDef,
+    Assign,
+    DictComp,
     ExceptHandler,
     Expr,
     FunctionDef,
+    GeneratorExp,
     IfExp,
     Lambda,
+    ListComp,
     Module,
+    SetComp,
     Try,
     With,
 )
+
+from ast import unparse as ast_unparse
 
 
 def _strip_module(ast):
@@ -27,9 +35,11 @@ def _strip_expr(ast):
     raise ValueError("No Expr to strip")
 
 
-def str_to_ast(s):
+def str_to_ast(s, keep_module=False):
     import ast
 
+    if keep_module:
+        return ast.parse(s)
     return _strip_module(ast.parse(s))
 
 
@@ -97,9 +107,81 @@ with open('f') as f:
     assert "f" in result.body[0]._ending_scope
 
 
-# TODO(buck): GeneratorExpressions
-# TODO(buck): ListComps
-# TODO(buck): Assignment
-# TODO(buck): DictComps
-# TODO(buck): SetComps
-# TODO(buck): ClassDef
+def test_ListComp():
+    input_text = "[x[0] for x in [1, 2, 3]]"
+    ast = _strip_expr(str_to_ast(input_text))
+    transformer = build_transformer(ast)
+    result = transformer.visit(ast)
+
+    assert isinstance(result, ListComp)
+    print(ast_unparse(result))
+    print(ast_unparse(result.elt))
+    print(ast_unparse(result.generators))
+    assert "x" in result.elt._ending_scope
+
+
+def test_SetComp():
+    input_text = "{x for x in [1, 2, 3]}"
+    ast = _strip_expr(str_to_ast(input_text))
+    transformer = build_transformer(ast)
+    result = transformer.visit(ast)
+
+    assert isinstance(result, SetComp)
+    print(ast_unparse(result))
+    print(ast_unparse(result.elt))
+    print(ast_unparse(result.generators))
+    assert "x" in result.elt._ending_scope
+
+
+def test_DictComp():
+    input_text = "{str(x): x for x in [1, 2, 3]}"
+    ast = _strip_expr(str_to_ast(input_text))
+    assert isinstance(ast, DictComp)
+
+    transformer = build_transformer(ast)
+    result = transformer.visit(ast)
+
+    assert isinstance(result, DictComp)
+    print(ast_unparse(result))
+    print(ast_unparse(result.key))
+    print(ast_unparse(result.value))
+    print(ast_unparse(result.generators))
+    assert "x" in result.key._ending_scope
+
+
+def test_GeneratorExp():
+    input_text = "(x for x in [1, 2, 3])"
+    ast = _strip_expr(str_to_ast(input_text))
+    transformer = build_transformer(ast)
+    result = transformer.visit(ast)
+
+    assert isinstance(result, GeneratorExp)
+    print(ast_unparse(result))
+    print(ast_unparse(result.elt))
+    print(ast_unparse(result.generators))
+    assert "x" in result.elt._ending_scope
+
+
+def test_Assign():
+    input_text = """
+x = 5
+print(x)"""
+    ast = str_to_ast(input_text, keep_module=True)
+    transformer = build_transformer(ast)
+    result = transformer.visit(ast)
+
+    assert isinstance(result.body[0], Assign)
+    assert "x" in result.body[1]._ending_scope
+
+
+def test_ClassDef():
+    input_text = """
+class InterestingName(object):
+    pass
+print(x)"""
+    ast = str_to_ast(input_text, keep_module=True)
+    transformer = build_transformer(ast)
+    result = transformer.visit(ast)
+
+    assert isinstance(result.body[0], ClassDef)
+    assert "InterestingName" in result.body[1]._ending_scope
