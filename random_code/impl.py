@@ -293,7 +293,11 @@ class UnbundlingVisitor(NodeVisitor):
             name = "visit_%s" % (k,)
             setattr(self, name, self._explore_function_factory(k))
 
+    def depth_padding(self):
+        return " " * self.depth
+
     def _helper_function_factory(self, node_name):
+        @depth_protection
         def _visit_X(self, node_):
             self._known_visit(node_name, node_)
             self._post_visit(node_)
@@ -303,6 +307,7 @@ class UnbundlingVisitor(NodeVisitor):
         return partial(_visit_X, self)
 
     def _ignore_function_factory(self, node_name):
+        @depth_protection
         def _visit_X_ignore(self, node_):
             self._post_visit(node_)
 
@@ -311,6 +316,7 @@ class UnbundlingVisitor(NodeVisitor):
         return partial(_visit_X_ignore, self)
 
     def _explore_function_factory(self, node_name):
+        @depth_protection
         def _visit_X_explore(self, node_):
             self._explore_visit(node_name, node_)
             self.generic_visit(node_)
@@ -320,17 +326,15 @@ class UnbundlingVisitor(NodeVisitor):
         return partial(_visit_X_explore, self)
 
     def _post_visit(self, node):
-        log.info(" " * self.depth + " Processed " + type(node).__name__)
-        self.depth += 1
+        log.info(self.depth_padding() + " Processed " + type(node).__name__)
         NodeVisitor.generic_visit(self, node)
-        self.depth -= 1
 
     def _explore_visit(self, name, node):
-        log.warning(" " * self.depth + "Explore %s %s" % (name, dir(node)))
+        log.warning(self.depth_padding() + "Explore %s %s" % (name, dir(node)))
         for k in sorted(list(dir(node))):
             if not k.startswith("__"):
-                log.warning(" " * self.depth, k, getattr(node, k))
-        log.warning(" " * self.depth + "---")
+                log.warning(self.depth_padding(), k, getattr(node, k))
+        log.warning(self.depth_padding() + "---")
 
     def _known_visit(self, name, nodex):
         for k in self.visited[name]:
@@ -348,7 +352,7 @@ class UnbundlingVisitor(NodeVisitor):
                         yield '"%s": []' % (f,)
 
                 log.warning(
-                    " " * self.depth
+                    self.depth_padding()
                     + '"%s": {%s},' % (type(node).__name__, ",".join(field_str(node)))
                 )
             self.missed_parents.add(type(node).__name__)
@@ -791,6 +795,28 @@ def littering(name, to_name):
     return wrapper
 
 
+def depth_protection(
+    func,
+):  # increment depth, check max depth, decrement depth on function exit
+    @wraps(func)
+    def wrapped(self, node):
+        self.depth += 1
+        if self.depth >= self.max_depth:
+            log.warning(
+                "depth_protection: %s max_depth %d exceeded with depth %d",
+                str(self),
+                self.max_depth,
+                self.depth,
+            )
+            result = node
+        else:
+            result = func(self, node)
+        self.depth -= 1
+        return result
+
+    return wrapped
+
+
 class RandomizingTransformer(NodeTransformer):
     def __init__(self, corpus, *, log_level=None):
         if log_level is not None:
@@ -823,11 +849,14 @@ class RandomizingTransformer(NodeTransformer):
             if not hasattr(self, name):
                 setattr(self, name, self._helper_function_factory(k))
             else:
-                log.debug(" " * self.depth + "Not clobbering %s", k)
+                log.debug(self.depth_padding() + "Not clobbering %s", k)
 
         for k in self.ignore:
             name = "visit_%s" % (k,)
             setattr(self, name, self._ignore_function_factory(k))
+
+    def depth_padding(self):
+        return " " * self.depth
 
     def valid_swap(self, node_, proposed_swap):
         # TODO(buck): check for mixed usage of node_, proposed_swap
@@ -863,7 +892,7 @@ class RandomizingTransformer(NodeTransformer):
             if proposed_swap.id not in self.scope:
                 self.out_of_scope.add(proposed_swap.id)
                 log.debug(
-                    " " * self.depth
+                    self.depth_padding()
                     + "Bad Swap: proposed_swap out of scope %s" % (proposed_swap.id,)
                 )
                 return False
@@ -879,7 +908,7 @@ class RandomizingTransformer(NodeTransformer):
             )
             if condition:
                 log.debug(
-                    " " * self.depth
+                    self.depth_padding()
                     + "Good Swap %s and (%s or %s) scope: %s"
                     % (
                         proposed_swap.id in self.scope,
@@ -890,7 +919,7 @@ class RandomizingTransformer(NodeTransformer):
                 )
             else:
                 log.debug(
-                    " " * self.depth
+                    self.depth_padding()
                     + "Bad Swap %s and (%s or %s)"
                     % (
                         proposed_swap.id in self.scope,
@@ -919,9 +948,9 @@ class RandomizingTransformer(NodeTransformer):
                 # assert len(names_to_check) > 0
                 # Counter Example: 'a b c'.split()
             except AssertionError:
-                log.error(" " * self.depth + "Failed to find names to check")
-                log.error(" " * self.depth + proposed_swap)
-                log.error(" " * self.depth + ast_unparse(proposed_swap))
+                log.error(self.depth_padding() + "Failed to find names to check")
+                log.error(self.depth_padding() + proposed_swap)
+                log.error(self.depth_padding() + ast_unparse(proposed_swap))
                 code.interact(
                     local=dict(ChainMap({"ast_unparse": ast_unparse}, locals()))
                 )
@@ -952,9 +981,9 @@ class RandomizingTransformer(NodeTransformer):
             *arguments.kwonlyargs,
         ]
         if arguments.vararg is not None:
-            log.warning(" " * self.depth + "arguments.vararg")
-            log.warning(" " * self.depth + arguments.vararg)
-            log.warning(" " * self.depth + ast_unparse(arguments.vararg))
+            log.warning(self.depth_padding() + "arguments.vararg")
+            log.warning(self.depth_padding() + arguments.vararg)
+            log.warning(self.depth_padding() + ast_unparse(arguments.vararg))
             # TODO(add to list of args)
             1 / 0
             args.append(arguments.vararg)
@@ -964,14 +993,12 @@ class RandomizingTransformer(NodeTransformer):
 
     def _helper_function_factory(self, node_name):
         @littering("scope", "_ending_scope")
+        @depth_protection
         def _visit_X(self, node_):
             log.info("Visiting into %s %s", node_name, ast_unparse(node_))
             assert node_name != "FunctionDef"
             assert node_name != "With"
-
-            if self.depth > self.max_depth:
-                log.info("%s Ending due to max depth", node_name)
-                return node_
+            assert node_name != "Assign"
 
             for swapout in getattr(self.corpus, node_name)():
                 if self.valid_swap(node_, swapout):
@@ -985,7 +1012,7 @@ class RandomizingTransformer(NodeTransformer):
 
             if node_name == "arguments":
                 log.debug(
-                    " " * self.depth
+                    self.depth_padding()
                     + "Swapped arguments in Scope %s for %s"
                     % (
                         [a.arg for a in self.args_to_names(node_)],
@@ -1006,8 +1033,8 @@ class RandomizingTransformer(NodeTransformer):
                         1 / 0
                     self.scope[arg.arg] = type_
                     if arg.annotation is not None or arg.type_comment is not None:
-                        log.debug(" " * self.depth + "arguments - Typed Scope")
-                        log.debug(" " * self.depth + str(self.scope))
+                        log.debug(self.depth_padding() + "arguments - Typed Scope")
+                        log.debug(self.depth_padding() + str(self.scope))
 
             # TODO(buck): check/sync scoping implementation with list of new def functionality
 
@@ -1041,19 +1068,19 @@ class RandomizingTransformer(NodeTransformer):
             ## End If Inspection
 
             log.debug(
-                " " * self.depth + "Swapped " + str(node_) + " for " + str(result)
+                self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
             )
-            log.debug(" " * self.depth + "====")
+            log.debug(self.depth_padding() + "====")
             try:
-                log.debug(" " * self.depth + ast_unparse(node_))
+                log.debug(self.depth_padding() + ast_unparse(node_))
             except RecursionError:
-                log.debug(" " * self.depth + str(node_))
-            log.debug(" " * self.depth + ">>>>")
+                log.debug(self.depth_padding() + str(node_))
+            log.debug(self.depth_padding() + ">>>>")
             try:
-                log.debug(" " * self.depth + ast_unparse(swapout))
+                log.debug(self.depth_padding() + ast_unparse(swapout))
             except RecursionError:
-                log.debug(" " * self.depth + str(swapout))
-            log.debug(" " * self.depth + "====")
+                log.debug(self.depth_padding() + str(swapout))
+            log.debug(self.depth_padding() + "====")
 
             log.info("Visiting out  %s", node_name)
             return result
@@ -1063,10 +1090,8 @@ class RandomizingTransformer(NodeTransformer):
         return partial(_visit_X, self)
 
     def _ignore_function_factory(self, node_name):
+        @depth_protection
         def _visit_X_ignore(self, node_):
-            if self.depth > self.max_depth:
-                return node_
-
             result = self._post_visit(node_)
             return result
 
@@ -1075,12 +1100,10 @@ class RandomizingTransformer(NodeTransformer):
         return partial(_visit_X_ignore, self)
 
     def _post_visit(self, node):
-        log.debug(" " * self.depth + type(node).__name__ + " " + str(self.scope))
+        log.debug(self.depth_padding() + type(node).__name__ + " " + str(self.scope))
 
-        self.depth += 1
         result = NodeTransformer.generic_visit(self, node)
         assert result is not None
-        self.depth -= 1
         return result
 
     @littering("scope", "_ending_scope")
@@ -1088,18 +1111,15 @@ class RandomizingTransformer(NodeTransformer):
         node_type_str = type(node).__name__
         name = "visit_%s" % (node_type_str,)
         log.debug(
-            " " * self.depth
+            self.depth_padding()
             + "generic_visit: Providing default ignore case for %s" % (node_type_str,)
         )
         setattr(self, name, self._ignore_function_factory(node_type_str))
         return self._post_visit(node)
 
-    # TODO(buck) @depth_protection() # increment depth, check max depth, decrement depth on function exit
     @littering("scope", "_ending_scope")
+    @depth_protection
     def visit_FunctionDef(self, node_):
-        if self.depth > self.max_depth:
-            return node_
-
         for swapout in self.corpus.FunctionDef():
             if self.valid_swap(node_, swapout):
                 # Let python scoping drop this variable
@@ -1118,12 +1138,13 @@ class RandomizingTransformer(NodeTransformer):
         # Note: previous definition doesn't exist because it wasn't reached by the transformer yet
         # Note: Typing a FunctionDef as its return value would enable swapping a function call for a value
         log.debug(
-            " " * self.depth + "Scope before FunctionDef start %s" % (self.scope,)
+            self.depth_padding() + "Scope before FunctionDef start %s" % (self.scope,)
         )
         self.scope = self.scope.new_child()
-        self.depth += 1
         self.scope["__random_code_return_ok"] = True
-        log.debug(" " * self.depth + "Scope at FunctionDef start %s" % (self.scope,))
+        log.debug(
+            self.depth_padding() + "Scope at FunctionDef start %s" % (self.scope,)
+        )
 
         # decorator_list
         for i in range(len(swapout.decorator_list)):
@@ -1154,11 +1175,15 @@ class RandomizingTransformer(NodeTransformer):
                 type_ = arg.type_comment.id
                 1 / 0
             self.scope[arg.arg] = type_
-        log.debug(" " * self.depth + "Scope after FunctionDef args %s" % (self.scope,))
+        log.debug(
+            self.depth_padding() + "Scope after FunctionDef args %s" % (self.scope,)
+        )
 
         # name
         self.scope.maps[1][swapout.name] = "FunctionDef"
-        log.debug(" " * self.depth + "Scope after FunctionDef name %s" % (self.scope,))
+        log.debug(
+            self.depth_padding() + "Scope after FunctionDef name %s" % (self.scope,)
+        )
 
         # body
         for i in range(len(swapout.body)):
@@ -1169,35 +1194,35 @@ class RandomizingTransformer(NodeTransformer):
 
         result = swapout
 
-        log.debug(" " * self.depth + "Scope at FunctionDef end %s" % (self.scope,))
+        log.debug(self.depth_padding() + "Scope at FunctionDef end %s" % (self.scope,))
         # TODO(buck): calculate depth based on scope?
-        self.depth -= 1
         self.scope = self.scope.parents
-        log.debug(" " * self.depth + "Scope after FunctionDef end %s" % (self.scope,))
+        log.debug(
+            self.depth_padding() + "Scope after FunctionDef end %s" % (self.scope,)
+        )
 
-        log.debug(" " * self.depth + "Swapped " + str(node_) + " for " + str(result))
-        log.debug(" " * self.depth + "====")
+        log.debug(
+            self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
+        )
+        log.debug(self.depth_padding() + "====")
         try:
-            log.debug(" " * self.depth + ast_unparse(node_))
+            log.debug(self.depth_padding() + ast_unparse(node_))
         except RecursionError:
-            log.debug(" " * self.depth + str(node_))
-        log.debug(" " * self.depth + ">>>>")
+            log.debug(self.depth_padding() + str(node_))
+        log.debug(self.depth_padding() + ">>>>")
         try:
-            log.debug(" " * self.depth + ast_unparse(swapout))
+            log.debug(self.depth_padding() + ast_unparse(swapout))
         except RecursionError:
-            log.debug(" " * self.depth + str(swapout))
-        log.debug(" " * self.depth + "====")
+            log.debug(self.depth_padding() + str(swapout))
+        log.debug(self.depth_padding() + "====")
 
         return result
 
     @littering("scope", "_ending_scope")
+    @depth_protection
     def visit_With(self, node_):
         node_name = "With"
         log.info("Visiting into %s %s", node_name, ast_unparse(node_))
-
-        if self.depth > self.max_depth:
-            log.info("%s Ending due to max depth", node_name)
-            return node_
 
         for swapout in getattr(self.corpus, node_name)():
             if self.valid_swap(node_, swapout):
@@ -1210,8 +1235,7 @@ class RandomizingTransformer(NodeTransformer):
             return node_
 
         self.scope = self.scope.new_child()
-        self.depth += 1
-        log.debug(" " * self.depth + "Scope at With start %s" % (self.scope,))
+        log.debug(self.depth_padding() + "Scope at With start %s" % (self.scope,))
 
         # Scoping order
         # withitems.option_vars
@@ -1244,22 +1268,84 @@ class RandomizingTransformer(NodeTransformer):
 
         result = swapout
 
-        log.debug(" " * self.depth + "Scope at With end %s" % (self.scope,))
-        self.depth -= 1
+        log.debug(self.depth_padding() + "Scope at With end %s" % (self.scope,))
         self.scope = self.scope.parents
 
-        log.debug(" " * self.depth + "Swapped " + str(node_) + " for " + str(result))
-        log.debug(" " * self.depth + "====")
+        log.debug(
+            self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
+        )
+        log.debug(self.depth_padding() + "====")
         try:
-            log.debug(" " * self.depth + ast_unparse(node_))
+            log.debug(self.depth_padding() + ast_unparse(node_))
         except RecursionError:
-            log.debug(" " * self.depth + str(node_))
-        log.debug(" " * self.depth + ">>>>")
+            log.debug(self.depth_padding() + str(node_))
+        log.debug(self.depth_padding() + ">>>>")
         try:
-            log.debug(" " * self.depth + ast_unparse(swapout))
+            log.debug(self.depth_padding() + ast_unparse(swapout))
         except RecursionError:
-            log.debug(" " * self.depth + str(swapout))
-        log.debug(" " * self.depth + "====")
+            log.debug(self.depth_padding() + str(swapout))
+        log.debug(self.depth_padding() + "====")
+
+        log.info("Visiting out  %s", node_name)
+        return result
+
+    @littering("scope", "_ending_scope")
+    @depth_protection
+    def visit_Assign(self, node_):
+        node_name = "Assign"
+        log.info("Visiting into %s %s", node_name, ast_unparse(node_))
+
+        # TODO(buck): Check valid_swap for Assign (we don't need to check the targets)
+        for swapout in getattr(self.corpus, node_name)():
+            if self.valid_swap(node_, swapout):
+                # Let python scoping drop this variable
+                break
+        else:
+            # no valid swapout found
+            # TODO(buck): In theory, we should always have at least one from the corpus?
+            log.debug("%s Ending due to no valid swap found", node_name)
+            return node_
+
+        log.debug(self.depth_padding() + "Scope at Assign start %s" % (self.scope,))
+
+        # Scoping order
+        # targets
+
+        # withitems list (analagous to FunctionDef args)
+        log.info("Visiting swapout.targets")
+        for i in range(len(swapout.targets)):
+            log.info("Visiting swapout.targets[%s]", i)
+            swapout.targets[i] = NodeTransformer.generic_visit(self, swapout.targets[i])
+            assert swapout.targets[i] is not None
+            swapout.targets[i]._ending_scope = dict(self.scope)
+
+        for target in swapout.targets:
+            type_ = "Any"
+            # TODO(buck): take the type of the assigned object
+            if isinstance(target, Name):
+                self.scope[target.id] = type_
+            else:
+                # TODO(buck) handle other allowed assignment contexts later
+                1 / 0
+
+        result = swapout
+
+        log.debug(self.depth_padding() + "Scope at With end %s" % (self.scope,))
+
+        log.debug(
+            self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
+        )
+        log.debug(self.depth_padding() + "====")
+        try:
+            log.debug(self.depth_padding() + ast_unparse(node_))
+        except RecursionError:
+            log.debug(self.depth_padding() + str(node_))
+        log.debug(self.depth_padding() + ">>>>")
+        try:
+            log.debug(self.depth_padding() + ast_unparse(swapout))
+        except RecursionError:
+            log.debug(self.depth_padding() + str(swapout))
+        log.debug(self.depth_padding() + "====")
 
         log.info("Visiting out  %s", node_name)
         return result
