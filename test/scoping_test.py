@@ -66,15 +66,22 @@ def test_FunctionDef_annotation():
     input_text = """
 def main(i: i):
     return 1
+print(main)
 """
-    ast = str_to_ast(input_text)
+    ast = str_to_ast(input_text, keep_module=True)
     transformer = build_transformer(ast)
     result = transformer.visit(ast)
 
-    assert isinstance(result, FunctionDef)
-    args = result.args
+    funcdef = result.body[0]
+    the_rest = result.body[1]
+    assert isinstance(funcdef, FunctionDef)
+    args = funcdef.args
     assert isinstance(args, arguments)
     assert "i" not in args._ending_scope
+    assert "i" in funcdef.body[0]._ending_scope
+    assert "main" in funcdef.body[0]._ending_scope
+
+    assert "main" in the_rest._ending_scope
 
 
 def test_Lambda_args():
@@ -196,7 +203,9 @@ class InterestingName(object):
 print(x)"""
     ast = str_to_ast(input_text, keep_module=True)
     transformer = build_transformer(ast)
+    transformer.scope["object"] = "builtin"
     result = transformer.visit(ast)
 
     assert isinstance(result.body[0], ClassDef)
+    assert "InterestingName" in result.body[0].body[0]._ending_scope
     assert "InterestingName" in result.body[1]._ending_scope

@@ -1500,6 +1500,106 @@ class RandomizingTransformer(NodeTransformer):
     def visit_GeneratorExp(self, node_):
         return self.visit_ListCompLike(node_, "GeneratorExp", ["elt"])
 
+    @littering("scope", "_ending_scope")
+    @depth_protection
+    def visit_ClassDef(self, node_):
+        node_name = "ClassDef"
+        log.info("Visiting into %s %s", node_name, ast_unparse(node_))
+
+        for swapout in getattr(self.corpus, node_name)():
+            if self.valid_swap(node_, swapout):
+                # Let python scoping drop this variable
+                break
+        else:
+            # no valid swapout found
+            # TODO(buck): In theory, we should always have at least one from the corpus?
+            log.debug("%s Ending due to no valid swap found", node_name)
+            return node_
+
+        log.debug(
+            self.depth_padding()
+            + "Scope at %s start %s"
+            % (
+                node_name,
+                self.scope,
+            )
+        )
+
+        # Scoping order
+        # bases
+        # keywords?
+        # decorator_list
+        # body
+
+        if len(swapout.keywords) != 0:
+            print(ast_unparse(swapout))
+            for idx, key in enumerate(swapout.keywords):
+                print(idx, ast_unparse(key))
+            1 / 0
+
+        log.info("Visiting swapout.bases")
+        for i in range(len(swapout.bases)):
+            log.info("Visiting swapout.bases[%s]", i)
+            swapout.bases[i] = NodeTransformer.generic_visit(self, swapout.bases[i])
+            assert swapout.bases[i] is not None
+            swapout.bases[i]._ending_scope = dict(self.scope)
+
+        log.info("Visiting swapout.keywords")
+        for i in range(len(swapout.keywords)):
+            log.info("Visiting swapout.keywords[%s]", i)
+            swapout.keywords[i] = NodeTransformer.generic_visit(
+                self, swapout.keywords[i]
+            )
+            assert swapout.keywords[i] is not None
+            swapout.keywords[i]._ending_scope = dict(self.scope)
+
+        log.info("Visiting swapout.decorator_list")
+        for i in range(len(swapout.decorator_list)):
+            log.info("Visiting swapout.decorator_list[%s]", i)
+            swapout.decorator_list[i] = NodeTransformer.generic_visit(
+                self, swapout.decorator_list[i]
+            )
+            assert swapout.decorator_list[i] is not None
+            swapout.decorator_list[i]._ending_scope = dict(self.scope)
+
+        self.scope[swapout.name] = "ClassDef"
+
+        log.info("Visiting swapout.body")
+        for i in range(len(swapout.body)):
+            log.info("Visiting swapout.body[%s]", i)
+            swapout.body[i] = NodeTransformer.generic_visit(self, swapout.body[i])
+            assert swapout.body[i] is not None
+            swapout.body[i]._ending_scope = dict(self.scope)
+
+        result = swapout
+
+        log.debug(
+            self.depth_padding()
+            + "Scope at %s end %s"
+            % (
+                node_name,
+                self.scope,
+            )
+        )
+
+        log.debug(
+            self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
+        )
+        log.debug(self.depth_padding() + "====")
+        try:
+            log.debug(self.depth_padding() + ast_unparse(node_))
+        except RecursionError:
+            log.debug(self.depth_padding() + str(node_))
+        log.debug(self.depth_padding() + ">>>>")
+        try:
+            log.debug(self.depth_padding() + ast_unparse(swapout))
+        except RecursionError:
+            log.debug(self.depth_padding() + str(swapout))
+        log.debug(self.depth_padding() + "====")
+
+        log.info("Visiting out  %s", node_name)
+        return result
+
 
 def the_sauce(gen: BagOfConcepts, start: Module, *, log_level=None):
     transformer = RandomizingTransformer(gen, log_level=log_level)
