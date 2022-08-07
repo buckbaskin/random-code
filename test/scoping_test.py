@@ -119,7 +119,7 @@ with 'f' as f:
 
 
 def test_ListComp():
-    input_text = "[x[0] for x in [1, 2, 3]]"
+    input_text = "[x[0] for x in [1, 2, 3] if x > 0]"
     ast = _strip_expr(str_to_ast(input_text))
     transformer = build_transformer(ast)
     result = transformer.visit(ast)
@@ -127,7 +127,8 @@ def test_ListComp():
     assert isinstance(result, ListComp)
     print(ast_unparse(result))
     print(ast_unparse(result.elt))
-    print(ast_unparse(result.generators))
+    for idx, gen in enumerate(result.generators):
+        print(idx, ast_unparse(gen))
     assert "x" in result.elt._ending_scope
 
 
@@ -140,7 +141,8 @@ def test_SetComp():
     assert isinstance(result, SetComp)
     print(ast_unparse(result))
     print(ast_unparse(result.elt))
-    print(ast_unparse(result.generators))
+    for idx, gen in enumerate(result.generators):
+        print(idx, ast_unparse(gen))
     assert "x" in result.elt._ending_scope
 
 
@@ -156,7 +158,8 @@ def test_DictComp():
     print(ast_unparse(result))
     print(ast_unparse(result.key))
     print(ast_unparse(result.value))
-    print(ast_unparse(result.generators))
+    for idx, gen in enumerate(result.generators):
+        print(idx, ast_unparse(gen))
     assert "x" in result.key._ending_scope
 
 
@@ -169,7 +172,8 @@ def test_GeneratorExp():
     assert isinstance(result, GeneratorExp)
     print(ast_unparse(result))
     print(ast_unparse(result.elt))
-    print(ast_unparse(result.generators))
+    for idx, gen in enumerate(result.generators):
+        print(idx, ast_unparse(gen))
     assert "x" in result.elt._ending_scope
 
 

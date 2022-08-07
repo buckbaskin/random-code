@@ -28,19 +28,24 @@ Generated with script `big_example.py` from hypothesis https://github.com/Hypoth
 
 ### Randomly Generated Source
 ```python
+
 from hypothesis.utils.conventions import settings
 
 def test_no_single_floats_in_range():
-    range = 10 ** 5
-    DeprecationWarning = IndexError() - 1
-    all(None)
-    with list(Exception) as bytes:
-        'A generic warning issued by Hypothesis.'
-        with isinstance('inf') as len:
-            'Returns all of the distinct states that can be reached via one\n\n        transition from ``state``, in the lexicographic order of the\n\n        smallest character that reaches them.'
+    low = (10 ** 5)
+    high = (1 + 1j)
+    ', '.join()
+    with pytest.raises(InvalidArgument):
+        "A wrapper to make the given database read-only.\n\n\n\n    The implementation passes through ``fetch``, and turns ``save``, ``delete``, and\n\n    ``move`` into silent no-ops.\n\n\n\n    Note that this disables Hypothesis' automatic discarding of stale examples.\n\n    It is designed to allow local machines to access a shared database (e.g. from CI\n\n    servers), without propagating changes back from a local or in-development branch.\n\n    "
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            st.floats(low, high, width=32).validate()
 
-def test_can_find_mixed_ascii_and_non_ascii_strings():
-    zip = bytes(1000)
-    assert type(f'(deferred@{TypeError!r})') <= 3
-    assert set() > 0
+def test_subTest():
+    suite = '\n\ntry:\n\n{}\n\n    exc_type = None\n\n    target(1, label="input was valid")\n\n{}except Exception as exc:\n\n    exc_type = type(exc)\n\n'.strip()
+    ', '.join((0.0, 5e-324))
+    stream = '\n'.join()
+    out = ', '.join()
+    assert ((n_value,) in (2, 1)), out
+
 ```

@@ -583,56 +583,30 @@ def nested_unpack(element, top_level=None):
                     yield kid
 
         return list(flattened_Set())
-    elif isinstance(element, GeneratorExp):
+    elif (
+        isinstance(element, ListComp)
+        or isinstance(element, GeneratorExp)
+        or isinstance(element, DictComp)
+        or isinstance(element, SetComp)
+    ):
 
-        def flattened_GeneratorExp():
-            for elt_id in nested_unpack(element.elt, top_level):
-                yield elt_id
-
-            for gen in element.generators:
-                for gid in nested_unpack(gen, top_level):
-                    yield gid
-
-        return list(flattened_GeneratorExp())
-    elif isinstance(element, ListComp):
-
-        # TODO(buck): Combine GeneratorExp, ListComp impl
         def flattened_ListComp():
-            for elt_id in nested_unpack(element.elt, top_level):
-                yield elt_id
+            # Note: elt_id, ifs may be defined by the generators
+            # for elt_id in nested_unpack(element.elt, top_level):
+            #     yield elt_id
 
             for gen in element.generators:
                 for gid in nested_unpack(gen, top_level):
                     yield gid
 
         return list(flattened_ListComp())
-    elif isinstance(element, DictComp):
-
-        def flattened_DictComp():
-            # TODO(buck): check key, value
-            for gen in element.generators:
-                for gid in nested_unpack(gen, top_level):
-                    yield gid
-
-        return list(flattened_DictComp())
-    elif isinstance(element, SetComp):
-
-        # TODO(buck): Combine GeneratorExp, SetComp impl
-        def flattened_SetComp():
-            for elt_id in nested_unpack(element.elt, top_level):
-                yield elt_id
-
-            for gen in element.generators:
-                for gid in nested_unpack(gen, top_level):
-                    yield gid
-
-        return list(flattened_SetComp())
     elif isinstance(element, comprehension):
 
         def flattened_comprehension():
-            for if_ in element.ifs:
-                for ifid in nested_unpack(if_, top_level):
-                    yield ifid
+            # names in ifs may be defined by other parts of the comprehension
+            # for if_ in element.ifs:
+            #     for ifid in nested_unpack(if_, top_level):
+            #         yield ifid
             for iid in nested_unpack(element.iter, top_level):
                 yield iid
 
@@ -971,6 +945,12 @@ class RandomizingTransformer(NodeTransformer):
         for name in names_to_check:
             if name not in self.scope:
                 self.out_of_scope.add(name)
+                log.debug(
+                    "%s%s swap failed to %s not in scope",
+                    self.depth_padding(),
+                    node_type,
+                    name,
+                )
                 return False
         return True
 
@@ -996,9 +976,15 @@ class RandomizingTransformer(NodeTransformer):
         @depth_protection
         def _visit_X(self, node_):
             log.info("Visiting into %s %s", node_name, ast_unparse(node_))
-            assert node_name != "FunctionDef"
-            assert node_name != "With"
-            assert node_name != "Assign"
+            assert node_name not in [
+                "FunctionDef",
+                "With",
+                "Assign",
+                "ListComp",
+                "DictComp",
+                "SetComp",
+                "GeneratorExp",
+            ]
 
             for swapout in getattr(self.corpus, node_name)():
                 if self.valid_swap(node_, swapout):
@@ -1120,6 +1106,7 @@ class RandomizingTransformer(NodeTransformer):
     @littering("scope", "_ending_scope")
     @depth_protection
     def visit_FunctionDef(self, node_):
+        node_name = "FunctionDef"
         for swapout in self.corpus.FunctionDef():
             if self.valid_swap(node_, swapout):
                 # Let python scoping drop this variable
@@ -1138,12 +1125,22 @@ class RandomizingTransformer(NodeTransformer):
         # Note: previous definition doesn't exist because it wasn't reached by the transformer yet
         # Note: Typing a FunctionDef as its return value would enable swapping a function call for a value
         log.debug(
-            self.depth_padding() + "Scope before FunctionDef start %s" % (self.scope,)
+            self.depth_padding()
+            + "Scope before %s start %s"
+            % (
+                node_name,
+                self.scope,
+            )
         )
         self.scope = self.scope.new_child()
         self.scope["__random_code_return_ok"] = True
         log.debug(
-            self.depth_padding() + "Scope at FunctionDef start %s" % (self.scope,)
+            self.depth_padding()
+            + "Scope at %s start %s"
+            % (
+                node_name,
+                self.scope,
+            )
         )
 
         # decorator_list
@@ -1176,13 +1173,23 @@ class RandomizingTransformer(NodeTransformer):
                 1 / 0
             self.scope[arg.arg] = type_
         log.debug(
-            self.depth_padding() + "Scope after FunctionDef args %s" % (self.scope,)
+            self.depth_padding()
+            + "Scope after %s args %s"
+            % (
+                node_name,
+                self.scope,
+            )
         )
 
         # name
         self.scope.maps[1][swapout.name] = "FunctionDef"
         log.debug(
-            self.depth_padding() + "Scope after FunctionDef name %s" % (self.scope,)
+            self.depth_padding()
+            + "Scope after %s name %s"
+            % (
+                node_name,
+                self.scope,
+            )
         )
 
         # body
@@ -1194,11 +1201,23 @@ class RandomizingTransformer(NodeTransformer):
 
         result = swapout
 
-        log.debug(self.depth_padding() + "Scope at FunctionDef end %s" % (self.scope,))
+        log.debug(
+            self.depth_padding()
+            + "Scope at %s end %s"
+            % (
+                node_name,
+                self.scope,
+            )
+        )
         # TODO(buck): calculate depth based on scope?
         self.scope = self.scope.parents
         log.debug(
-            self.depth_padding() + "Scope after FunctionDef end %s" % (self.scope,)
+            self.depth_padding()
+            + "Scope after %s end %s"
+            % (
+                node_name,
+                self.scope,
+            )
         )
 
         log.debug(
@@ -1235,7 +1254,14 @@ class RandomizingTransformer(NodeTransformer):
             return node_
 
         self.scope = self.scope.new_child()
-        log.debug(self.depth_padding() + "Scope at With start %s" % (self.scope,))
+        log.debug(
+            self.depth_padding()
+            + "Scope at %s start %s"
+            % (
+                node_name,
+                self.scope,
+            )
+        )
 
         # Scoping order
         # withitems.option_vars
@@ -1268,7 +1294,14 @@ class RandomizingTransformer(NodeTransformer):
 
         result = swapout
 
-        log.debug(self.depth_padding() + "Scope at With end %s" % (self.scope,))
+        log.debug(
+            self.depth_padding()
+            + "Scope at %s end %s"
+            % (
+                node_name,
+                self.scope,
+            )
+        )
         self.scope = self.scope.parents
 
         log.debug(
@@ -1306,7 +1339,14 @@ class RandomizingTransformer(NodeTransformer):
             log.debug("%s Ending due to no valid swap found", node_name)
             return node_
 
-        log.debug(self.depth_padding() + "Scope at Assign start %s" % (self.scope,))
+        log.debug(
+            self.depth_padding()
+            + "Scope at %s start %s"
+            % (
+                node_name,
+                self.scope,
+            )
+        )
 
         # Scoping order
         # targets
@@ -1330,7 +1370,14 @@ class RandomizingTransformer(NodeTransformer):
 
         result = swapout
 
-        log.debug(self.depth_padding() + "Scope at With end %s" % (self.scope,))
+        log.debug(
+            self.depth_padding()
+            + "Scope at %s end %s"
+            % (
+                node_name,
+                self.scope,
+            )
+        )
 
         log.debug(
             self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
@@ -1349,6 +1396,109 @@ class RandomizingTransformer(NodeTransformer):
 
         log.info("Visiting out  %s", node_name)
         return result
+
+    def visit_ListCompLike(self, node_, node_name, keys_and_values):
+        log.info("Visiting into %s %s", node_name, ast_unparse(node_))
+
+        for swapout in getattr(self.corpus, node_name)():
+            if self.valid_swap(node_, swapout):
+                # Let python scoping drop this variable
+                break
+        else:
+            # no valid swapout found
+            # TODO(buck): In theory, we should always have at least one from the corpus?
+            log.debug("%s Ending due to no valid swap found", node_name)
+            return node_
+
+        log.debug(
+            self.depth_padding()
+            + "Scope at %s start %s"
+            % (
+                node_name,
+                self.scope,
+            )
+        )
+        self.scope = self.scope.new_child()
+
+        # Scoping order
+        # generators
+        # elt
+        # ifs (expr, so no assign)
+
+        log.info("Visiting swapout.generators")
+        for i in range(len(swapout.generators)):
+            log.info("Visiting swapout.generators[%s]", i)
+            swapout.generators[i] = NodeTransformer.generic_visit(
+                self, swapout.generators[i]
+            )
+            assert swapout.generators[i] is not None
+            swapout.generators[i]._ending_scope = dict(self.scope)
+
+        for generator in swapout.generators:
+            type_ = "Any"
+            if isinstance(generator.target, Name):
+                self.scope[generator.target.id] = type_
+            else:
+                1 / 0
+
+        for member in keys_and_values:
+            setattr(
+                swapout,
+                member,
+                NodeTransformer.generic_visit(self, getattr(swapout, member)),
+            )
+            assert getattr(swapout, member) is not None
+            getattr(swapout, member)._ending_scope = dict(self.scope)
+
+        result = swapout
+
+        log.debug(
+            self.depth_padding()
+            + "Scope at %s end %s"
+            % (
+                node_name,
+                self.scope,
+            )
+        )
+        self.scope = self.scope.parents
+
+        log.debug(
+            self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
+        )
+        log.debug(self.depth_padding() + "====")
+        try:
+            log.debug(self.depth_padding() + ast_unparse(node_))
+        except RecursionError:
+            log.debug(self.depth_padding() + str(node_))
+        log.debug(self.depth_padding() + ">>>>")
+        try:
+            log.debug(self.depth_padding() + ast_unparse(swapout))
+        except RecursionError:
+            log.debug(self.depth_padding() + str(swapout))
+        log.debug(self.depth_padding() + "====")
+
+        log.info("Visiting out  %s", node_name)
+        return result
+
+    @littering("scope", "_ending_scope")
+    @depth_protection
+    def visit_ListComp(self, node_):
+        return self.visit_ListCompLike(node_, "ListComp", ["elt"])
+
+    @littering("scope", "_ending_scope")
+    @depth_protection
+    def visit_DictComp(self, node_):
+        return self.visit_ListCompLike(node_, "DictComp", ["key", "value"])
+
+    @littering("scope", "_ending_scope")
+    @depth_protection
+    def visit_SetComp(self, node_):
+        return self.visit_ListCompLike(node_, "SetComp", ["elt"])
+
+    @littering("scope", "_ending_scope")
+    @depth_protection
+    def visit_GeneratorExp(self, node_):
+        return self.visit_ListCompLike(node_, "GeneratorExp", ["elt"])
 
 
 def the_sauce(gen: BagOfConcepts, start: Module, *, log_level=None):
