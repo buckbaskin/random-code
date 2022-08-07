@@ -70,6 +70,7 @@ print(main)
 """
     ast = str_to_ast(input_text, keep_module=True)
     transformer = build_transformer(ast)
+    transformer.scope["print"] = "builtin"
     result = transformer.visit(ast)
 
     funcdef = result.body[0]
@@ -77,7 +78,8 @@ print(main)
     assert isinstance(funcdef, FunctionDef)
     args = funcdef.args
     assert isinstance(args, arguments)
-    assert "i" not in args._ending_scope
+    assert "i" not in args.args[0].annotation._ending_scope
+    assert "i" in args._ending_scope
     assert "i" in funcdef.body[0]._ending_scope
     assert "main" in funcdef.body[0]._ending_scope
 

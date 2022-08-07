@@ -524,7 +524,9 @@ def nested_unpack(element, top_level=None):
 
         return list(flattened_Call())
     elif isinstance(element, Lambda):
-        return nested_unpack(element.body, top_level)
+        # Note: arguments may define names in body
+        # return nested_unpack(element.body, top_level)
+        return []
     elif isinstance(element, List):
         # TODO(buck): check underlying
         return []
@@ -849,6 +851,7 @@ class RandomizingTransformer(NodeTransformer):
             or not self.scope["__random_code_return_ok"]
         ):
             if contains_return(proposed_swap, proposed_swap):
+                log.debug("invalid swap: return not ok but contains return")
                 return False
 
         if node_type == "arg":
@@ -975,7 +978,7 @@ class RandomizingTransformer(NodeTransformer):
         @littering("scope", "_ending_scope")
         @depth_protection
         def _visit_X(self, node_):
-            log.info("Visiting into %s %s", node_name, ast_unparse(node_))
+            log.info("Visit_X-ing into %s %s", node_name, ast_unparse(node_))
             assert node_name not in [
                 "FunctionDef",
                 "With",
@@ -984,6 +987,7 @@ class RandomizingTransformer(NodeTransformer):
                 "DictComp",
                 "SetComp",
                 "GeneratorExp",
+                "ClassDef",
             ]
 
             for swapout in getattr(self.corpus, node_name)():
@@ -993,7 +997,7 @@ class RandomizingTransformer(NodeTransformer):
             else:
                 # no valid swapout found
                 # TODO(buck): In theory, we should always have at least one from the corpus?
-                log.debug("%s Ending due to no valid swap found", node_name)
+                log.warning("%s Ending due to no valid swap found", node_name)
                 return node_
 
             if node_name == "arguments":
@@ -1005,9 +1009,6 @@ class RandomizingTransformer(NodeTransformer):
                         [a.arg for a in self.args_to_names(swapout)],
                     )
                 )
-                # TODO(buck): Check if we need to clean up scope
-                # for start_arg in self.args_to_names(node_):
-                #     del self.scope[start_arg.arg]
 
                 for arg in self.args_to_names(swapout):
                     type_ = "Any"
@@ -1022,12 +1023,7 @@ class RandomizingTransformer(NodeTransformer):
                         log.debug(self.depth_padding() + "arguments - Typed Scope")
                         log.debug(self.depth_padding() + str(self.scope))
 
-            # TODO(buck): check/sync scoping implementation with list of new def functionality
-
-            result = swapout
-            # TODO(buck): Remove carve-out for arg so we can explore replacing aspects of the arg once we have typing
-            if node_name not in ["arg"]:
-                result = self._post_visit(swapout)
+            result = self._post_visit(swapout)
 
             ## Start If Inspection
             if node_name == "If":
@@ -1107,10 +1103,25 @@ class RandomizingTransformer(NodeTransformer):
     @depth_protection
     def visit_FunctionDef(self, node_):
         node_name = "FunctionDef"
+        log.debug(
+            self.depth_padding()
+            + "Scope before %s start %s"
+            % (
+                node_name,
+                self.scope,
+            )
+        )
+        self.scope = self.scope.new_child()
+        self.scope["__random_code_return_ok"] = True
         for swapout in self.corpus.FunctionDef():
             if self.valid_swap(node_, swapout):
                 # Let python scoping drop this variable
                 break
+        else:
+            # no valid swapout found
+            # TODO(buck): In theory, we should always have at least one from the corpus?
+            log.warning("%s Ending due to no valid swap found", node_name)
+            swapout = node_
 
         # Scoping Order
         # decorator_list
@@ -1124,16 +1135,6 @@ class RandomizingTransformer(NodeTransformer):
 
         # Note: previous definition doesn't exist because it wasn't reached by the transformer yet
         # Note: Typing a FunctionDef as its return value would enable swapping a function call for a value
-        log.debug(
-            self.depth_padding()
-            + "Scope before %s start %s"
-            % (
-                node_name,
-                self.scope,
-            )
-        )
-        self.scope = self.scope.new_child()
-        self.scope["__random_code_return_ok"] = True
         log.debug(
             self.depth_padding()
             + "Scope at %s start %s"
@@ -1163,15 +1164,6 @@ class RandomizingTransformer(NodeTransformer):
         assert swapout.args is not None
         swapout.args._ending_scope = dict(self.scope)
 
-        for arg in self.args_to_names(swapout.args):
-            type_ = "Any"
-            if arg.annotation is not None:
-                type_ = arg.annotation.id
-            elif arg.type_comment is not None:
-                # TODO(buck): check this code path
-                type_ = arg.type_comment.id
-                1 / 0
-            self.scope[arg.arg] = type_
         log.debug(
             self.depth_padding()
             + "Scope after %s args %s"
@@ -1239,6 +1231,106 @@ class RandomizingTransformer(NodeTransformer):
 
     @littering("scope", "_ending_scope")
     @depth_protection
+    def visit_Lambda(self, node_):
+        node_name = "Lambda"
+        log.debug(
+            self.depth_padding()
+            + "Scope before %s start %s"
+            % (
+                node_name,
+                self.scope,
+            )
+        )
+        self.scope = self.scope.new_child()
+        # Note: Lambdas contain a single expression which can't include a Return statement
+        self.scope["__random_code_return_ok"] = False
+        for swapout in self.corpus.Lambda():
+            if self.valid_swap(node_, swapout):
+                # Let python scoping drop this variable
+                break
+        else:
+            # no valid swapout found
+            # TODO(buck): In theory, we should always have at least one from the corpus?
+            log.warning("%s Ending due to no valid swap found", node_name)
+            swapout = node_
+
+        # Scoping Order
+        # args
+        #
+        # body
+
+        # Note: previous definition doesn't exist because it wasn't reached by the transformer yet
+        # Note: Typing a FunctionDef as its return value would enable swapping a function call for a value
+        log.debug(
+            self.depth_padding()
+            + "Scope at %s start %s"
+            % (
+                node_name,
+                self.scope,
+            )
+        )
+
+        # args
+        log.info("Visiting swapout.args")
+        swapout.args = NodeTransformer.generic_visit(self, swapout.args)
+        assert swapout.args is not None
+        swapout.args._ending_scope = dict(self.scope)
+
+        log.debug(
+            self.depth_padding()
+            + "Scope after %s args %s"
+            % (
+                node_name,
+                self.scope,
+            )
+        )
+
+        # body
+        log.info("Visiting swapout.body")
+        swapout.body = NodeTransformer.generic_visit(self, swapout.body)
+        assert swapout.body is not None
+        swapout.body._ending_scope = dict(self.scope)
+
+        result = swapout
+
+        log.debug(
+            self.depth_padding()
+            + "Scope at %s end %s"
+            % (
+                node_name,
+                self.scope,
+            )
+        )
+        # TODO(buck): calculate depth based on scope?
+        self.scope = self.scope.parents
+        log.debug(
+            self.depth_padding()
+            + "Scope after %s end %s"
+            % (
+                node_name,
+                self.scope,
+            )
+        )
+
+        log.debug(
+            self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
+        )
+        log.debug(self.depth_padding() + "====")
+        try:
+            log.debug(self.depth_padding() + ast_unparse(node_))
+        except RecursionError:
+            log.debug(self.depth_padding() + str(node_))
+        log.debug(self.depth_padding() + ">>>>")
+        try:
+            log.debug(self.depth_padding() + ast_unparse(swapout))
+        except RecursionError:
+            log.debug(self.depth_padding() + str(swapout))
+        log.debug(self.depth_padding() + "====")
+
+        return result
+
+    @littering("scope", "_ending_scope")
+    @depth_protection
     def visit_With(self, node_):
         node_name = "With"
         log.info("Visiting into %s %s", node_name, ast_unparse(node_))
@@ -1250,7 +1342,7 @@ class RandomizingTransformer(NodeTransformer):
         else:
             # no valid swapout found
             # TODO(buck): In theory, we should always have at least one from the corpus?
-            log.debug("%s Ending due to no valid swap found", node_name)
+            log.warning("%s Ending due to no valid swap found", node_name)
             return node_
 
         self.scope = self.scope.new_child()
@@ -1336,7 +1428,7 @@ class RandomizingTransformer(NodeTransformer):
         else:
             # no valid swapout found
             # TODO(buck): In theory, we should always have at least one from the corpus?
-            log.debug("%s Ending due to no valid swap found", node_name)
+            log.warning("%s Ending due to no valid swap found", node_name)
             return node_
 
         log.debug(
@@ -1407,7 +1499,7 @@ class RandomizingTransformer(NodeTransformer):
         else:
             # no valid swapout found
             # TODO(buck): In theory, we should always have at least one from the corpus?
-            log.debug("%s Ending due to no valid swap found", node_name)
+            log.warning("%s Ending due to no valid swap found", node_name)
             return node_
 
         log.debug(
@@ -1513,7 +1605,7 @@ class RandomizingTransformer(NodeTransformer):
         else:
             # no valid swapout found
             # TODO(buck): In theory, we should always have at least one from the corpus?
-            log.debug("%s Ending due to no valid swap found", node_name)
+            log.warning("%s Ending due to no valid swap found", node_name)
             return node_
 
         log.debug(
