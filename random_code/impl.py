@@ -1138,8 +1138,8 @@ class RandomizingTransformer(NodeTransformer):
             return_ok=True,
             scope_order=[
                 ("decorator_list", "multi-visit"),
-                ("returns", "optional"),
-                ("args", "optional"),
+                ("returns", "single-visit"),
+                ("args", "single-visit"),
                 (custom_scope_processor_FunctionDef, "custom"),
                 ("body", "multi-visit"),
             ],
@@ -1148,13 +1148,12 @@ class RandomizingTransformer(NodeTransformer):
     @littering("scope", "_ending_scope")
     @depth_protection
     def visit_Lambda(self, node_):
-        # TODO(buck): rename optional? it works for the maybe None and known not None case
         return self._visit_impl(
             node_,
             "Lambda",
             new_scope=True,
             return_ok=False,
-            scope_order=[("args", "optional"), ("body", "optional")],
+            scope_order=[("args", "single-visit"), ("body", "single-visit")],
         )
 
     @littering("scope", "_ending_scope")
@@ -1284,7 +1283,7 @@ class RandomizingTransformer(NodeTransformer):
             "ExceptHandler",
             new_scope=True,
             scope_order=[
-                ("type", "optional"),
+                ("type", "single-visit"),
                 ("name", "name"),
                 ("body", "multi-visit"),
             ],
@@ -1324,7 +1323,7 @@ class RandomizingTransformer(NodeTransformer):
 
         if len(scope_order) > 0:
             for field, field_type in scope_order:
-                if field_type == "optional":
+                if field_type == "single-visit":
                     if getattr(swapout, field) is not None:
                         setattr(
                             swapout,
