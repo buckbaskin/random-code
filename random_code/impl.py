@@ -1106,27 +1106,6 @@ class RandomizingTransformer(NodeTransformer):
     @littering("scope", "_ending_scope")
     @depth_protection
     def visit_FunctionDef(self, node_):
-        node_name = "FunctionDef"
-        log.debug(
-            self.depth_padding()
-            + "Scope before %s start %s"
-            % (
-                node_name,
-                self.scope,
-            )
-        )
-        self.scope = self.scope.new_child()
-        self.scope["__random_code_return_ok"] = True
-        for swapout in self.corpus.FunctionDef():
-            if self.valid_swap(node_, swapout):
-                # Let python scoping drop this variable
-                break
-        else:
-            # no valid swapout found
-            # TODO(buck): In theory, we should always have at least one from the corpus?
-            log.warning("%s Ending due to no valid swap found", node_name)
-            swapout = node_
-
         # Scoping Order
         # decorator_list
         # returns
@@ -1137,444 +1116,115 @@ class RandomizingTransformer(NodeTransformer):
         # body (body has name [recursion], args, decorator names in scope)
         # type comment (it's a comment, anyone can write anything there, but other code can't observe it
 
-        # Note: previous definition doesn't exist because it wasn't reached by the transformer yet
         # Note: Typing a FunctionDef as its return value would enable swapping a function call for a value
-        log.debug(
-            self.depth_padding()
-            + "Scope at %s start %s"
-            % (
-                node_name,
-                self.scope,
-            )
-        )
-
-        # decorator_list
-        for i in range(len(swapout.decorator_list)):
-            log.info("Visiting swapout.decorator[%s]", i)
-            swapout.decorator_list[i] = NodeTransformer.generic_visit(
-                self, swapout.decorator_list[i]
-            )
-            assert swapout.decorator_list[i] is not None
-            swapout.decorator_list[i]._ending_scope = dict(self.scope)
-        # returns
-        if swapout.returns is not None:
-            log.info("Visiting swapout.returns")
-            swapout.returns = NodeTransformer.generic_visit(self, swapout.returns)
-            assert swapout.returns is not None
-            swapout.returns._ending_scope = dict(self.scope)
-        # args
-        log.info("Visiting swapout.args")
-        swapout.args = NodeTransformer.generic_visit(self, swapout.args)
-        assert swapout.args is not None
-        swapout.args._ending_scope = dict(self.scope)
-
-        log.debug(
-            self.depth_padding()
-            + "Scope after %s args %s"
-            % (
-                node_name,
-                self.scope,
-            )
-        )
 
         # name
-        self.scope.maps[1][swapout.name] = "FunctionDef"
-        log.debug(
-            self.depth_padding()
-            + "Scope after %s name %s"
-            % (
-                node_name,
-                self.scope,
+        def custom_scope_processor_FunctionDef(swapout):
+            self.scope.maps[1][swapout.name] = "FunctionDef"
+            log.debug(
+                self.depth_padding()
+                + "Scope after %s name %s"
+                % (
+                    "FunctionDef",
+                    self.scope,
+                )
             )
+            return swapout
+
+        return self._visit_impl(
+            node_,
+            "FunctionDef",
+            new_scope=True,
+            return_ok=True,
+            scope_order=[
+                ("decorator_list", "multi-visit"),
+                ("returns", "optional"),
+                ("args", "optional"),
+                (custom_scope_processor_FunctionDef, "custom"),
+                ("body", "multi-visit"),
+            ],
         )
-
-        # body
-        for i in range(len(swapout.body)):
-            log.info("Visiting swapout.body[%s]", i)
-            swapout.body[i] = NodeTransformer.generic_visit(self, swapout.body[i])
-            assert swapout.body[i] is not None
-            swapout.body[i]._ending_scope = dict(self.scope)
-
-        result = swapout
-
-        log.debug(
-            self.depth_padding()
-            + "Scope at %s end %s"
-            % (
-                node_name,
-                self.scope,
-            )
-        )
-        # TODO(buck): calculate depth based on scope?
-        self.scope = self.scope.parents
-        log.debug(
-            self.depth_padding()
-            + "Scope after %s end %s"
-            % (
-                node_name,
-                self.scope,
-            )
-        )
-
-        log.debug(
-            self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
-        )
-        log.debug(self.depth_padding() + "====")
-        try:
-            log.debug(self.depth_padding() + ast_unparse(node_))
-        except RecursionError:
-            log.debug(self.depth_padding() + str(node_))
-        log.debug(self.depth_padding() + ">>>>")
-        try:
-            log.debug(self.depth_padding() + ast_unparse(swapout))
-        except RecursionError:
-            log.debug(self.depth_padding() + str(swapout))
-        log.debug(self.depth_padding() + "====")
-
-        return result
 
     @littering("scope", "_ending_scope")
     @depth_protection
     def visit_Lambda(self, node_):
-        node_name = "Lambda"
-        log.debug(
-            self.depth_padding()
-            + "Scope before %s start %s"
-            % (
-                node_name,
-                self.scope,
-            )
+        # TODO(buck): rename optional? it works for the maybe None and known not None case
+        return self._visit_impl(
+            node_,
+            "Lambda",
+            new_scope=True,
+            return_ok=False,
+            scope_order=[("args", "optional"), ("body", "optional")],
         )
-        self.scope = self.scope.new_child()
-        # Note: Lambdas contain a single expression which can't include a Return statement
-        self.scope["__random_code_return_ok"] = False
-        for swapout in self.corpus.Lambda():
-            if self.valid_swap(node_, swapout):
-                # Let python scoping drop this variable
-                break
-        else:
-            # no valid swapout found
-            # TODO(buck): In theory, we should always have at least one from the corpus?
-            log.warning("%s Ending due to no valid swap found", node_name)
-            swapout = node_
-
-        # Scoping Order
-        # args
-        #
-        # body
-
-        # Note: previous definition doesn't exist because it wasn't reached by the transformer yet
-        # Note: Typing a FunctionDef as its return value would enable swapping a function call for a value
-        log.debug(
-            self.depth_padding()
-            + "Scope at %s start %s"
-            % (
-                node_name,
-                self.scope,
-            )
-        )
-
-        # args
-        log.info("Visiting swapout.args")
-        swapout.args = NodeTransformer.generic_visit(self, swapout.args)
-        assert swapout.args is not None
-        swapout.args._ending_scope = dict(self.scope)
-
-        log.debug(
-            self.depth_padding()
-            + "Scope after %s args %s"
-            % (
-                node_name,
-                self.scope,
-            )
-        )
-
-        # body
-        log.info("Visiting swapout.body")
-        swapout.body = NodeTransformer.generic_visit(self, swapout.body)
-        assert swapout.body is not None
-        swapout.body._ending_scope = dict(self.scope)
-
-        result = swapout
-
-        log.debug(
-            self.depth_padding()
-            + "Scope at %s end %s"
-            % (
-                node_name,
-                self.scope,
-            )
-        )
-        # TODO(buck): calculate depth based on scope?
-        self.scope = self.scope.parents
-        log.debug(
-            self.depth_padding()
-            + "Scope after %s end %s"
-            % (
-                node_name,
-                self.scope,
-            )
-        )
-
-        log.debug(
-            self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
-        )
-        log.debug(self.depth_padding() + "====")
-        try:
-            log.debug(self.depth_padding() + ast_unparse(node_))
-        except RecursionError:
-            log.debug(self.depth_padding() + str(node_))
-        log.debug(self.depth_padding() + ">>>>")
-        try:
-            log.debug(self.depth_padding() + ast_unparse(swapout))
-        except RecursionError:
-            log.debug(self.depth_padding() + str(swapout))
-        log.debug(self.depth_padding() + "====")
-
-        return result
 
     @littering("scope", "_ending_scope")
     @depth_protection
     def visit_With(self, node_):
-        node_name = "With"
-        log.info("Visiting into %s %s", node_name, ast_unparse(node_))
+        # TODO(buck): Are the multi-names really generalizable?
+        def custom_scope_processor_WithItems(swapout):
+            for withitem in swapout.items:
+                type_ = "Any"
+                # TODO(buck): Can withitem optional vars be typed? They'd take on the type of the result of the associated context_expr
+                if withitem.optional_vars is not None:
+                    vars_to_scope = withitem.optional_vars
+                    if isinstance(vars_to_scope, Name):
+                        self.scope[vars_to_scope.id] = type_
+                    else:
+                        # TODO(buck) handle other allowed assignment contexts later
+                        1 / 0
+            return swapout
 
-        for swapout in getattr(self.corpus, node_name)():
-            if self.valid_swap(node_, swapout):
-                # Let python scoping drop this variable
-                break
-        else:
-            # no valid swapout found
-            # TODO(buck): In theory, we should always have at least one from the corpus?
-            log.warning("%s Ending due to no valid swap found", node_name)
-            return node_
-
-        self.scope = self.scope.new_child()
-        log.debug(
-            self.depth_padding()
-            + "Scope at %s start %s"
-            % (
-                node_name,
-                self.scope,
-            )
+        return self._visit_impl(
+            node_,
+            "With",
+            new_scope=True,
+            scope_order=[
+                ("items", "multi-visit"),
+                (custom_scope_processor_WithItems, "custom"),
+                ("body", "multi-visit"),
+            ],
         )
-
-        # Scoping order
-        # withitems.option_vars
-        # body
-
-        # withitems list (analagous to FunctionDef args)
-        log.info("Visiting swapout.items")
-        for i in range(len(swapout.items)):
-            log.info("Visiting swapout.items[%s]", i)
-            swapout.items[i] = NodeTransformer.generic_visit(self, swapout.items[i])
-            assert swapout.items[i] is not None
-            swapout.items[i]._ending_scope = dict(self.scope)
-
-        for withitem in swapout.items:
-            type_ = "Any"
-            # TODO(buck): Can withitem optional vars be typed? They'd take on the type of the result of the associated context_expr
-            if withitem.optional_vars is not None:
-                vars_to_scope = withitem.optional_vars
-                if isinstance(vars_to_scope, Name):
-                    self.scope[vars_to_scope.id] = type_
-                else:
-                    # TODO(buck) handle other allowed assignment contexts later
-                    1 / 0
-        # body
-        for i in range(len(swapout.body)):
-            log.info("Visiting swapout.body[%s]", i)
-            swapout.body[i] = NodeTransformer.generic_visit(self, swapout.body[i])
-            assert swapout.body[i] is not None
-            swapout.body[i]._ending_scope = dict(self.scope)
-
-        result = swapout
-
-        log.debug(
-            self.depth_padding()
-            + "Scope at %s end %s"
-            % (
-                node_name,
-                self.scope,
-            )
-        )
-        self.scope = self.scope.parents
-
-        log.debug(
-            self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
-        )
-        log.debug(self.depth_padding() + "====")
-        try:
-            log.debug(self.depth_padding() + ast_unparse(node_))
-        except RecursionError:
-            log.debug(self.depth_padding() + str(node_))
-        log.debug(self.depth_padding() + ">>>>")
-        try:
-            log.debug(self.depth_padding() + ast_unparse(swapout))
-        except RecursionError:
-            log.debug(self.depth_padding() + str(swapout))
-        log.debug(self.depth_padding() + "====")
-
-        log.info("Visiting out  %s", node_name)
-        return result
 
     @littering("scope", "_ending_scope")
     @depth_protection
     def visit_Assign(self, node_):
-        node_name = "Assign"
-        log.info("Visiting into %s %s", node_name, ast_unparse(node_))
-
-        # TODO(buck): Check valid_swap for Assign (we don't need to check the targets)
-        for swapout in getattr(self.corpus, node_name)():
-            if self.valid_swap(node_, swapout):
-                # Let python scoping drop this variable
-                break
-        else:
-            # no valid swapout found
-            # TODO(buck): In theory, we should always have at least one from the corpus?
-            log.warning("%s Ending due to no valid swap found", node_name)
-            return node_
-
-        log.debug(
-            self.depth_padding()
-            + "Scope at %s start %s"
-            % (
-                node_name,
-                self.scope,
-            )
+        return self._visit_impl(
+            node_,
+            "Assign",
+            new_scope=False,
+            scope_order=[
+                ("targets", "multi-visit"),
+                ("targets", "multi-name"),
+            ],
         )
-
-        # Scoping order
-        # targets
-
-        # withitems list (analagous to FunctionDef args)
-        log.info("Visiting swapout.targets")
-        for i in range(len(swapout.targets)):
-            log.info("Visiting swapout.targets[%s]", i)
-            swapout.targets[i] = NodeTransformer.generic_visit(self, swapout.targets[i])
-            assert swapout.targets[i] is not None
-            swapout.targets[i]._ending_scope = dict(self.scope)
-
-        for target in swapout.targets:
-            type_ = "Any"
-            # TODO(buck): take the type of the assigned object
-            if isinstance(target, Name):
-                self.scope[target.id] = type_
-            else:
-                # TODO(buck) handle other allowed assignment contexts later
-                1 / 0
-
-        result = swapout
-
-        log.debug(
-            self.depth_padding()
-            + "Scope at %s end %s"
-            % (
-                node_name,
-                self.scope,
-            )
-        )
-
-        log.debug(
-            self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
-        )
-        log.debug(self.depth_padding() + "====")
-        try:
-            log.debug(self.depth_padding() + ast_unparse(node_))
-        except RecursionError:
-            log.debug(self.depth_padding() + str(node_))
-        log.debug(self.depth_padding() + ">>>>")
-        try:
-            log.debug(self.depth_padding() + ast_unparse(swapout))
-        except RecursionError:
-            log.debug(self.depth_padding() + str(swapout))
-        log.debug(self.depth_padding() + "====")
-
-        log.info("Visiting out  %s", node_name)
-        return result
 
     def visit_ListCompLike(self, node_, node_name, keys_and_values):
-        log.info("Visiting into %s %s", node_name, ast_unparse(node_))
-
-        for swapout in getattr(self.corpus, node_name)():
-            if self.valid_swap(node_, swapout):
-                # Let python scoping drop this variable
-                break
-        else:
-            # no valid swapout found
-            # TODO(buck): In theory, we should always have at least one from the corpus?
-            log.warning("%s Ending due to no valid swap found", node_name)
-            return node_
-
-        log.debug(
-            self.depth_padding()
-            + "Scope at %s start %s"
-            % (
-                node_name,
-                self.scope,
-            )
-        )
-        self.scope = self.scope.new_child()
-
         # Scoping order
         # generators
         # elt
         # ifs (expr, so no assign)
 
-        log.info("Visiting swapout.generators")
-        for i in range(len(swapout.generators)):
-            log.info("Visiting swapout.generators[%s]", i)
-            swapout.generators[i] = NodeTransformer.generic_visit(
-                self, swapout.generators[i]
-            )
-            assert swapout.generators[i] is not None
-            swapout.generators[i]._ending_scope = dict(self.scope)
+        def custom_scope_processor_KV(swapout):
+            for member in keys_and_values:
+                setattr(
+                    swapout,
+                    member,
+                    NodeTransformer.generic_visit(self, getattr(swapout, member)),
+                )
+                assert getattr(swapout, member) is not None
+                getattr(swapout, member)._ending_scope = dict(self.scope)
+            return swapout
 
-        for generator in swapout.generators:
-            type_ = "Any"
-            if isinstance(generator.target, Name):
-                self.scope[generator.target.id] = type_
-            else:
-                1 / 0
-
-        for member in keys_and_values:
-            setattr(
-                swapout,
-                member,
-                NodeTransformer.generic_visit(self, getattr(swapout, member)),
-            )
-            assert getattr(swapout, member) is not None
-            getattr(swapout, member)._ending_scope = dict(self.scope)
-
-        result = swapout
-
-        log.debug(
-            self.depth_padding()
-            + "Scope at %s end %s"
-            % (
-                node_name,
-                self.scope,
-            )
+        return self._visit_impl(
+            node_,
+            node_name,
+            new_scope=True,
+            scope_order=[
+                ("generators", "multi-visit"),
+                ("generators", "multi-name"),
+                (custom_scope_processor_KV, "custom"),
+            ],
         )
-        self.scope = self.scope.parents
-
-        log.debug(
-            self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
-        )
-        log.debug(self.depth_padding() + "====")
-        try:
-            log.debug(self.depth_padding() + ast_unparse(node_))
-        except RecursionError:
-            log.debug(self.depth_padding() + str(node_))
-        log.debug(self.depth_padding() + ">>>>")
-        try:
-            log.debug(self.depth_padding() + ast_unparse(swapout))
-        except RecursionError:
-            log.debug(self.depth_padding() + str(swapout))
-        log.debug(self.depth_padding() + "====")
-
-        log.info("Visiting out  %s", node_name)
-        return result
 
     @littering("scope", "_ending_scope")
     @depth_protection
@@ -1599,153 +1249,58 @@ class RandomizingTransformer(NodeTransformer):
     @littering("scope", "_ending_scope")
     @depth_protection
     def visit_ClassDef(self, node_):
-        node_name = "ClassDef"
-        log.info("Visiting into %s %s", node_name, ast_unparse(node_))
-
-        for swapout in getattr(self.corpus, node_name)():
-            if self.valid_swap(node_, swapout):
-                # Let python scoping drop this variable
-                break
-        else:
-            # no valid swapout found
-            # TODO(buck): In theory, we should always have at least one from the corpus?
-            log.warning("%s Ending due to no valid swap found", node_name)
-            return node_
-
-        log.debug(
-            self.depth_padding()
-            + "Scope at %s start %s"
-            % (
-                node_name,
-                self.scope,
-            )
-        )
-
-        # Scoping order
-        # bases
-        # keywords?
-        # decorator_list
-        # body
-
-        if len(swapout.keywords) != 0:
-            print(ast_unparse(swapout))
-            for idx, key in enumerate(swapout.keywords):
+        # Note: Debuggery for me
+        if len(node_.keywords) != 0:
+            print(ast_unparse(node_))
+            for idx, key in enumerate(node_.keywords):
                 print(idx, ast_unparse(key))
             1 / 0
 
-        log.info("Visiting swapout.bases")
-        for i in range(len(swapout.bases)):
-            log.info("Visiting swapout.bases[%s]", i)
-            swapout.bases[i] = NodeTransformer.generic_visit(self, swapout.bases[i])
-            assert swapout.bases[i] is not None
-            swapout.bases[i]._ending_scope = dict(self.scope)
-
-        log.info("Visiting swapout.keywords")
-        for i in range(len(swapout.keywords)):
-            log.info("Visiting swapout.keywords[%s]", i)
-            swapout.keywords[i] = NodeTransformer.generic_visit(
-                self, swapout.keywords[i]
-            )
-            assert swapout.keywords[i] is not None
-            swapout.keywords[i]._ending_scope = dict(self.scope)
-
-        log.info("Visiting swapout.decorator_list")
-        for i in range(len(swapout.decorator_list)):
-            log.info("Visiting swapout.decorator_list[%s]", i)
-            swapout.decorator_list[i] = NodeTransformer.generic_visit(
-                self, swapout.decorator_list[i]
-            )
-            assert swapout.decorator_list[i] is not None
-            swapout.decorator_list[i]._ending_scope = dict(self.scope)
-
-        self.scope[swapout.name] = "ClassDef"
-
-        log.info("Visiting swapout.body")
-        for i in range(len(swapout.body)):
-            log.info("Visiting swapout.body[%s]", i)
-            swapout.body[i] = NodeTransformer.generic_visit(self, swapout.body[i])
-            assert swapout.body[i] is not None
-            swapout.body[i]._ending_scope = dict(self.scope)
-
-        result = swapout
-
-        log.debug(
-            self.depth_padding()
-            + "Scope at %s end %s"
-            % (
-                node_name,
-                self.scope,
-            )
+        return self._visit_impl(
+            node_,
+            "ClassDef",
+            new_scope=False,
+            scope_order=[
+                ("bases", "multi-visit"),
+                ("keywords", "multi-visit"),
+                ("decorator_list", "multi-visit"),
+                ("name", "name"),
+                ("body", "multi-visit"),
+            ],
         )
-
-        log.debug(
-            self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
-        )
-        log.debug(self.depth_padding() + "====")
-        try:
-            log.debug(self.depth_padding() + ast_unparse(node_))
-        except RecursionError:
-            log.debug(self.depth_padding() + str(node_))
-        log.debug(self.depth_padding() + ">>>>")
-        try:
-            log.debug(self.depth_padding() + ast_unparse(swapout))
-        except RecursionError:
-            log.debug(self.depth_padding() + str(swapout))
-        log.debug(self.depth_padding() + "====")
-
-        log.info("Visiting out  %s", node_name)
-        return result
 
     @littering("scope", "_ending_scope")
     @depth_protection
     def visit_arg(self, node_):
-        node_name = "arg"
-        log.info("Visiting into %s %s", node_name, ast_unparse(node_))
-        for swapout in getattr(self.corpus, node_name)():
-            if self.valid_swap(node_, swapout):
-                # Let python scoping drop this variable
-                break
-        else:
-            # no valid swapout found
-            # TODO(buck): In theory, we should always have at least one from the corpus?
-            log.warning("%s Ending due to no valid swap found", node_name)
-            swapout = node_
-
-        type_ = "Any"
-        if swapout.annotation is not None:
-            type_ = swapout.annotation.id
-        elif swapout.type_comment is not None:
-            # TODO(buck): check this code path
-            type_ = swapout.type_comment.id
-            1 / 0
-        self.scope[swapout.arg] = type_
-        log.debug("scope gains value %s from arg" % (swapout.arg,))
-
-        result = self._post_visit(swapout)
-
-        log.debug(
-            self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
+        return self._visit_impl(
+            node_, "arg", new_scope=False, scope_order=[("arg", "name")]
         )
-        log.debug(self.depth_padding() + "====")
-        try:
-            log.debug(self.depth_padding() + ast_unparse(node_))
-        except RecursionError:
-            log.debug(self.depth_padding() + str(node_))
-        log.debug(self.depth_padding() + ">>>>")
-        try:
-            log.debug(self.depth_padding() + ast_unparse(swapout))
-        except RecursionError:
-            log.debug(self.depth_padding() + str(swapout))
-        log.debug(self.depth_padding() + "====")
-
-        log.info("Visiting out  %s", node_name)
-        return result
 
     @littering("scope", "_ending_scope")
     @depth_protection
     def visit_ExceptHandler(self, node_):
-        node_name = "ExceptHandler"
-        log.info("Visiting into %s %s", node_name, ast_unparse(node_))
+        return self._visit_impl(
+            node_,
+            "ExceptHandler",
+            new_scope=True,
+            scope_order=[
+                ("type", "optional"),
+                ("name", "name"),
+                ("body", "multi-visit"),
+            ],
+        )
+
+    def _visit_impl(self, node_, node_name, *, new_scope, scope_order, return_ok=None):
+        assert len(scope_order) > 0
+        log.info(
+            self.depth_padding() + "Visiting into %s %s", node_name, ast_unparse(node_)
+        )
+
+        if new_scope:
+            self.scope = self.scope.new_child()
+        if return_ok is not None:
+            self.scope["__random_code_return_ok"] = return_ok
+
         for swapout in getattr(self.corpus, node_name)():
             if self.valid_swap(node_, swapout):
                 # Let python scoping drop this variable
@@ -1753,10 +1308,11 @@ class RandomizingTransformer(NodeTransformer):
         else:
             # no valid swapout found
             # TODO(buck): In theory, we should always have at least one from the corpus?
-            log.warning("%s Ending due to no valid swap found", node_name)
+            log.warning(
+                self.depth_padding() + "%s Ending due to no valid swap found", node_name
+            )
             swapout = node_
 
-        self.scope = self.scope.new_child()
         log.debug(
             self.depth_padding()
             + "Scope at %s start %s"
@@ -1766,22 +1322,65 @@ class RandomizingTransformer(NodeTransformer):
             )
         )
 
-        if swapout.type is not None:
-            swapout.type = NodeTransformer.generic_visit(self, swapout.type)
-            assert swapout.type is not None
-            swapout.type._ending_scope = dict(self.scope)
+        if len(scope_order) > 0:
+            for field, field_type in scope_order:
+                if field_type == "optional":
+                    if getattr(swapout, field) is not None:
+                        setattr(
+                            swapout,
+                            field,
+                            NodeTransformer.generic_visit(
+                                self, getattr(swapout, field)
+                            ),
+                        )
+                        assert getattr(swapout, field) is not None
+                        getattr(swapout, field)._ending_scope = dict(self.scope)
+                elif field_type == "name":
+                    if getattr(swapout, field) is not None:
+                        # TODO(buck): Types instead of Any
+                        type_ = "Any"
+                        # if swapout.annotation is not None:
+                        #     type_ = swapout.annotation.id
+                        # elif swapout.type_comment is not None:
+                        #     # TODO(buck): check this code path
+                        #     type_ = swapout.type_comment.id
+                        #     1 / 0
+                        # self.scope[swapout.arg] = type_
+                        # log.debug("scope gains value %s from arg" % (swapout.arg,))
+                        self.scope[getattr(swapout, field)] = type_
+                elif field_type == "multi-visit":
+                    for i in range(len(getattr(swapout, field))):
+                        getattr(swapout, field)[i] = NodeTransformer.generic_visit(
+                            self, getattr(swapout, field)[i]
+                        )
+                        assert getattr(swapout, field)[i] is not None
+                        getattr(swapout, field)[i]._ending_scope = dict(self.scope)
+                elif field_type == "multi-name":
+                    for generator in getattr(swapout, field):
+                        type_ = "Any"
+                        # Assignment Case
+                        if isinstance(generator, Name):
+                            self.scope[generator.id] = type_
+                        # Generator case
+                        elif isinstance(generator.target, Name):
+                            self.scope[generator.target.id] = type_
+                        else:
+                            raise NotImplementedError(
+                                "Assignment in a multi-name to non-Names"
+                            )
+                elif field_type == "custom":
+                    log.info(
+                        self.depth_padding() + "scope_order selector custom: %s", field
+                    )
+                    swapout = field(swapout)
+                else:
+                    raise NotImplementedError(
+                        "_visit_impl scope_order selector %s" % (field_type,)
+                    )
 
-        if swapout.name is not None:
-            # swapout.name = NodeTransformer.generic_visit(self, swapout.name)
-            # assert swapout.name is not None
-            self.scope[swapout.name] = "Any"
-
-        for i in range(len(swapout.body)):
-            swapout.body[i] = NodeTransformer.generic_visit(self, swapout.body[i])
-            assert swapout.body[i] is not None
-            swapout.body[i]._ending_scope = dict(self.scope)
-
-        result = swapout
+            result = swapout
+        else:
+            result = self._post_visit(swapout)
 
         log.debug(
             self.depth_padding()
@@ -1791,7 +1390,8 @@ class RandomizingTransformer(NodeTransformer):
                 self.scope,
             )
         )
-        self.scope = self.scope.parents
+        if new_scope:
+            self.scope = self.scope.parents
 
         log.debug(
             self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
@@ -1808,7 +1408,7 @@ class RandomizingTransformer(NodeTransformer):
             log.debug(self.depth_padding() + str(swapout))
         log.debug(self.depth_padding() + "====")
 
-        log.info("Visiting out  %s", node_name)
+        log.info(self.depth_padding() + "Visiting out  %s", node_name)
         return result
 
 
