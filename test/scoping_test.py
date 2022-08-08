@@ -101,17 +101,23 @@ def test_Lambda_args():
 def test_ExceptHandler():
     input_text = """
 try:
-    pass
+    x = 1
 except ValueError as ve:
     pass
+pass
 """
-    ast = str_to_ast(input_text)
+    ast = str_to_ast(input_text, keep_module=True)
     transformer = build_transformer(ast)
     result = transformer.visit(ast)
 
-    assert isinstance(result, Try)
-    handler = result.handlers[0]
+    try_ = result.body[0]
+    the_rest = result.body[1]
+
+    assert isinstance(try_, Try)
+    handler = try_.handlers[0]
     assert "ve" in handler.body[0]._ending_scope
+
+    assert "x" in the_rest._ending_scope
 
 
 def test_With():
