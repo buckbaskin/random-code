@@ -988,6 +988,7 @@ class RandomizingTransformer(NodeTransformer):
                 "SetComp",
                 "GeneratorExp",
                 "ClassDef",
+                "arg",
             ]
 
             for swapout in getattr(self.corpus, node_name)():
@@ -998,7 +999,7 @@ class RandomizingTransformer(NodeTransformer):
                 # no valid swapout found
                 # TODO(buck): In theory, we should always have at least one from the corpus?
                 log.warning("%s Ending due to no valid swap found", node_name)
-                return node_
+                swapout = node_
 
             if node_name == "arguments":
                 log.debug(
@@ -1019,9 +1020,12 @@ class RandomizingTransformer(NodeTransformer):
                         type_ = arg.type_comment.id
                         1 / 0
                     self.scope[arg.arg] = type_
+                    log.debug("scope gains value %s from arg - arguments" % (arg.arg,))
                     if arg.annotation is not None or arg.type_comment is not None:
                         log.debug(self.depth_padding() + "arguments - Typed Scope")
                         log.debug(self.depth_padding() + str(self.scope))
+                log.warning("_visit_X for arguments")
+                1 / 0
 
             result = self._post_visit(swapout)
 
@@ -1673,6 +1677,49 @@ class RandomizingTransformer(NodeTransformer):
                 self.scope,
             )
         )
+
+        log.debug(
+            self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
+        )
+        log.debug(self.depth_padding() + "====")
+        try:
+            log.debug(self.depth_padding() + ast_unparse(node_))
+        except RecursionError:
+            log.debug(self.depth_padding() + str(node_))
+        log.debug(self.depth_padding() + ">>>>")
+        try:
+            log.debug(self.depth_padding() + ast_unparse(swapout))
+        except RecursionError:
+            log.debug(self.depth_padding() + str(swapout))
+        log.debug(self.depth_padding() + "====")
+
+        log.info("Visiting out  %s", node_name)
+        return result
+
+    def visit_arg(self, node_):
+        node_name = "arg"
+        log.info("Visiting into %s %s", node_name, ast_unparse(node_))
+        for swapout in getattr(self.corpus, node_name)():
+            if self.valid_swap(node_, swapout):
+                # Let python scoping drop this variable
+                break
+        else:
+            # no valid swapout found
+            # TODO(buck): In theory, we should always have at least one from the corpus?
+            log.warning("%s Ending due to no valid swap found", node_name)
+            swapout = node_
+
+        type_ = "Any"
+        if swapout.annotation is not None:
+            type_ = swapout.annotation.id
+        elif swapout.type_comment is not None:
+            # TODO(buck): check this code path
+            type_ = swapout.type_comment.id
+            1 / 0
+        self.scope[swapout.arg] = type_
+        log.debug("scope gains value %s from arg" % (swapout.arg,))
+
+        result = self._post_visit(swapout)
 
         log.debug(
             self.depth_padding() + "Swapped " + str(node_) + " for " + str(result)
