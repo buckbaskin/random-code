@@ -527,9 +527,6 @@ def nested_unpack(element, top_level=None):
         # Note: arguments may define names in body
         # return nested_unpack(element.body, top_level)
         return []
-    elif isinstance(element, List):
-        # TODO(buck): check underlying
-        return []
     elif isinstance(element, Tuple):
         # TODO(buck): check underlying
         return []
@@ -690,7 +687,6 @@ def nested_unpack(element, top_level=None):
     elif isinstance(element, For):
         return nested_unpack(element.iter, top_level)
     elif isinstance(element, List):
-
         def flattened_List():
             for elem in element.elts:
                 for eid in nested_unpack(elem, top_level):

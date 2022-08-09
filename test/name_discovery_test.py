@@ -358,7 +358,7 @@ def test_Pass():
 def test_ListComp():
     ast = _strip_expr(str_to_ast("[k for k in [1, name, 3]]"))
     assert isinstance(ast, ListComp)
-    assert ["name"] == nested_unpack(ast)
+    assert ["name"] == nested_unpack(ast, "DEBUG")
 
 
 # Module
