@@ -499,6 +499,7 @@ def nested_unpack(element, top_level=None):
 
     # TODO(buck): Make this a while loop with controlled depth
     if isinstance(element, NotNameParent):
+        log.debug("Ending with no elements: %s" % (type(element)))
         return []
 
     if isinstance(element, Name):
@@ -528,6 +529,7 @@ def nested_unpack(element, top_level=None):
         # return nested_unpack(element.body, top_level)
         return []
     elif isinstance(element, Tuple):
+        log.debug("Ending with no elements: %s" % (type(element)))
         # TODO(buck): check underlying
         return []
     elif (
@@ -687,6 +689,7 @@ def nested_unpack(element, top_level=None):
     elif isinstance(element, For):
         return nested_unpack(element.iter, top_level)
     elif isinstance(element, List):
+
         def flattened_List():
             for elem in element.elts:
                 for eid in nested_unpack(elem, top_level):
@@ -711,6 +714,7 @@ def nested_unpack(element, top_level=None):
         return list(flattened_Delete())
     elif isinstance(element, FormattedValue):
         # TODO(buck): Revisit FormattedValue expansion
+        log.debug("Ending with no elements: %s" % (type(element)))
         return []
     elif isinstance(element, ExceptHandler):
 
