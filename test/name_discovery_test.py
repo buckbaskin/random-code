@@ -1,6 +1,7 @@
 from random_code import nested_unpack
 
 from ast import (
+    AugAssign,
     BinOp,
     BoolOp,
     Break,
@@ -20,6 +21,7 @@ from ast import (
     Return,
     Set,
     SetComp,
+    Slice,
     Subscript,
     UnaryOp,
 )
@@ -82,6 +84,12 @@ while name > 0:
 def test_Assign():
     ast = str_to_ast("""assign = name""")
     assert ["name"] == nested_unpack(ast)
+
+
+# AugAssign
+def test_AugAssign():
+    ast = str_to_ast("""assign += name""")
+    assert ["assign", "name"] == nested_unpack(ast)
 
 
 # BinOp
@@ -395,6 +403,13 @@ def test_Set():
 def test_SetComp():
     ast = _strip_expr(str_to_ast("{k for k in [1, name, 3]}"))
     assert isinstance(ast, SetComp)
+    assert ["name"] == nested_unpack(ast)
+
+
+# Slice
+def test_Slice():
+    ast = _strip_expr(str_to_ast("[1, 2, 3, 4, 5][name:]")).slice
+    assert isinstance(ast, Slice)
     assert ["name"] == nested_unpack(ast)
 
 

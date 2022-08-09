@@ -1,6 +1,7 @@
 from ast import (
     Assert,
     Assign,
+    AugAssign,
     AST,
     AsyncFor,
     AsyncFunctionDef,
@@ -12,6 +13,7 @@ from ast import (
     Call,
     ClassDef,
     Compare,
+    comprehension,
     Constant,
     Delete,
     Dict,
@@ -44,6 +46,7 @@ from ast import (
     Return,
     Set,
     SetComp,
+    Slice,
     Starred,
     Subscript,
     Try,
@@ -53,7 +56,6 @@ from ast import (
     With,
     withitem,
     Yield,
-    comprehension,
 )
 
 ### Feature List
@@ -499,11 +501,6 @@ def args_to_names(arguments):
         *arguments.kwonlyargs,
     ]
     if arguments.vararg is not None:
-        log.warning("arguments.vararg")
-        log.warning(arguments.vararg)
-        log.warning(ast_unparse(arguments.vararg))
-        # TODO(add to list of args)
-        1 / 0
         args.append(arguments.vararg)
     if arguments.kwarg is not None:
         args.append(arguments.kwarg)
@@ -513,12 +510,10 @@ def args_to_names(arguments):
 def nested_unpack(element, top_level=None):
     assert not isinstance(element, list)
 
-    # TODO(buck): Make this a while loop with controlled depth
     if isinstance(element, NotNameParent):
-        log.debug("Ending with no elements: %s" % (type(element)))
+        log.debug("Ending NotNameParent with no elements: %s" % (type(element)))
         return []
-
-    if isinstance(element, Name):
+    elif isinstance(element, Name):
         return [element.id]
     elif (
         isinstance(element, Attribute)
@@ -697,6 +692,10 @@ def nested_unpack(element, top_level=None):
         return nested_unpack(element.value, top_level)
     elif isinstance(element, Assign):
         return nested_unpack(element.value, top_level)
+    elif isinstance(element, AugAssign):
+        return nested_unpack(element.target, top_level) + nested_unpack(
+            element.value, top_level
+        )
     elif isinstance(element, Try):
         # Note: handlers, orelse, finalbody conditionally executed and ignored
 
@@ -766,6 +765,20 @@ def nested_unpack(element, top_level=None):
                     yield eid
 
         return list(flattened_Module())
+    elif isinstance(element, Slice):
+
+        def flattened_Slice():
+            if element.lower is not None:
+                for lid in nested_unpack(element.lower, top_level):
+                    yield lid
+            if element.upper is not None:
+                for uid in nested_unpack(element.upper, top_level):
+                    yield uid
+            if element.step is not None:
+                for sid in nested_unpack(element.step, top_level):
+                    yield sid
+
+        return list(flattened_Slice())
 
     else:
         log.warning("args unpacking?")
