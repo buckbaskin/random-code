@@ -39,4 +39,4 @@ def test_RandomCodeSource_sequence(integer):
 
 def pytest_generate_tests(metafunc):
     if "integer" in metafunc.fixturenames:
-        metafunc.parametrize("integer", range(1, 20))
+        metafunc.parametrize("integer", range(1, 10))

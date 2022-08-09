@@ -801,7 +801,6 @@ def littering(name, to_name):
 
     For example, used to append the scope to each member of the AST to enable asserting on scope properties in testing
     """
-
     def wrapper(func):
         @wraps(func)
         def wrapped(self, *args, **kwargs):
@@ -933,7 +932,7 @@ class RandomizingTransformer(NodeTransformer):
                         proposed_swap.id in self.scope,
                         type_to_match == "Any",
                         self.scope[proposed_swap.id] == type_to_match,
-                        self.scope,
+                        self.scope.maps[:-1],
                     )
                 )
             else:
@@ -1040,7 +1039,7 @@ class RandomizingTransformer(NodeTransformer):
                     log.debug("scope gains value %s from arg - arguments" % (arg.arg,))
                     if arg.annotation is not None or arg.type_comment is not None:
                         log.debug(self.depth_padding() + "arguments - Typed Scope")
-                        log.debug(self.depth_padding() + str(self.scope))
+                        log.debug(self.depth_padding() + str(self.scope.maps[:-1]))
                 log.warning("_visit_X for arguments")
 
             result = self._post_visit(swapout)
@@ -1102,7 +1101,7 @@ class RandomizingTransformer(NodeTransformer):
         return partial(_visit_X_ignore, self)
 
     def _post_visit(self, node):
-        log.debug(self.depth_padding() + type(node).__name__ + " " + str(self.scope))
+        log.debug(self.depth_padding() + type(node).__name__ + " " + str(self.scope.maps[:-1]))
 
         result = NodeTransformer.generic_visit(self, node)
         assert result is not None
@@ -1142,7 +1141,7 @@ class RandomizingTransformer(NodeTransformer):
                 + "Scope after %s name %s"
                 % (
                     "FunctionDef",
-                    self.scope,
+                    self.scope.maps[:-1],
                 )
             )
             return swapout
@@ -1329,7 +1328,7 @@ class RandomizingTransformer(NodeTransformer):
             + "Scope at %s start %s"
             % (
                 node_name,
-                self.scope,
+                self.scope.maps[:-1],
             )
         )
 
@@ -1403,7 +1402,7 @@ class RandomizingTransformer(NodeTransformer):
             + "Scope at %s end %s"
             % (
                 node_name,
-                self.scope,
+                self.scope.maps[:-1],
             )
         )
         if new_scope:
