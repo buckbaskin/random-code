@@ -5,17 +5,15 @@ Generate random Python from a corpus of examples
 - The function `give_me_random_code` generates a new code example from a corpus
 - The class `RandomCodeSource` will continually generate new code samples from a corpus
 
-The function uses something similar to Waveform Collapse (citation needed) to exchange subsets of examples from the corpus in a random fashion to arrive at new code blocks
+The code was inspired by [Wave Function Collapse](https://github.com/mxgmn/WaveFunctionCollapse) by Maxim Gumin to exchange subsets of examples from the corpus in a random fashion to arrive at new code blocks
 
 ## Features
 
 Things that Work:
 - [x] Running the default script on a small custom example
-
-Things that maybe work:
-- [ ] Running the example script on an a big codebase
-- [ ] Check variable names are in scope
-- [ ] Tests that verify important functions
+- [x] Running the example script on an a big codebase
+- [x] Check variable names are in scope
+- [x] Tests that verify important functions
 
 Things that are planned to work in the future:
 - Exchange elements with elements of the exact same type, so the logic is likely useful
