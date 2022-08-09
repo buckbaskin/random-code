@@ -416,7 +416,6 @@ class BagOfConcepts(object):
         common_data_pairs = list(zip(*data_lists))
 
         def _visit_strict_pairs():
-            # TODO(buck) infinite recursion blockers
             self.rng.shuffle(common_data_pairs)
             for data_pair in common_data_pairs:
                 kwargs = {k: v for k, v in zip(identifiers, data_pair)}
@@ -635,7 +634,7 @@ def nested_unpack(element, top_level=None):
     elif isinstance(element, Expr):
         return nested_unpack(element.value, top_level)
     elif isinstance(element, With):
-        # TODO(buck): The name x in: "with open('f') as x" is currently incorrectly unswappable because I require it to be in scope but it doesn't need to be
+
         def flattened_With():
             for withitem in element.items:
                 for cid in nested_unpack(withitem.context_expr, top_level):
@@ -856,10 +855,9 @@ class RandomizingTransformer(NodeTransformer):
                 "__random_code_return_ok": False,
             }
         )
-        # for k in __builtins__:
-        #     self.scope[k] = "builtin"
+        for k in __builtins__:
+            self.scope[k] = "builtin"
 
-        # TODO(buck): Check to make sure we're not rejecting builtins
         self.out_of_scope = set()
 
         self.visited = set(corpus.corpus.keys())
@@ -880,14 +878,14 @@ class RandomizingTransformer(NodeTransformer):
         return " " * self.depth
 
     def valid_swap(self, node_, proposed_swap):
-        # TODO(buck): check for mixed usage of node_, proposed_swap
+        assert type(node_) == type(proposed_swap)
+
         node_type = type(node_).__name__
         new_definitions = ["Module", "arguments"]
         if node_type in new_definitions:
             return True
 
         i_know_its_wrong = ["alias", "ImportFrom"]
-        # TODO(buck) Revisit alias when I'm ready to inspect modules
         if node_type in i_know_its_wrong:
             return True
 
@@ -919,8 +917,6 @@ class RandomizingTransformer(NodeTransformer):
                 )
                 return False
 
-            # TODO(buck): Why is the original name not in scope?
-
             type_to_match = "Any"
             if node_.id in self.scope:
                 type_to_match = self.scope[node_.id]
@@ -950,8 +946,6 @@ class RandomizingTransformer(NodeTransformer):
                     )
                 )
             return condition
-
-        # TODO(buck): un-ignore op types, swap op types
 
         if node_type == "Call":
             names_to_check = []
@@ -1025,7 +1019,6 @@ class RandomizingTransformer(NodeTransformer):
                     break
             else:
                 # no valid swapout found
-                # TODO(buck): In theory, we should always have at least one from the corpus?
                 log.warning("%s Ending due to no valid swap found", node_name)
                 swapout = node_
 
@@ -1187,11 +1180,9 @@ class RandomizingTransformer(NodeTransformer):
     @littering("scope", "_ending_scope")
     @depth_protection
     def visit_With(self, node_):
-        # TODO(buck): Are the multi-names really generalizable?
         def custom_scope_processor_WithItems(swapout):
             for withitem in swapout.items:
                 type_ = "Any"
-                # TODO(buck): Can withitem optional vars be typed? They'd take on the type of the result of the associated context_expr
                 if withitem.optional_vars is not None:
                     vars_to_scope = withitem.optional_vars
                     if isinstance(vars_to_scope, Name):
@@ -1334,7 +1325,6 @@ class RandomizingTransformer(NodeTransformer):
                 break
         else:
             # no valid swapout found
-            # TODO(buck): In theory, we should always have at least one from the corpus?
             log.warning(
                 self.depth_padding() + "%s Ending due to no valid swap found", node_name
             )
@@ -1391,7 +1381,20 @@ class RandomizingTransformer(NodeTransformer):
                         # Generator case
                         elif isinstance(generator.target, Name):
                             self.scope[generator.target.id] = type_
+                        elif isinstance(generator.target, Tuple):
+                            for elt in generator.target.elts:
+                                self.scope[elt.id] = type_
                         else:
+                            log.error(swapout)
+                            log.error(ast_unparse(swapout))
+                            log.error(field)
+                            log.error(field_type)
+                            log.error(generator)
+                            log.error(ast_unparse(generator))
+                            if hasattr(generator, "target"):
+                                log.error("target")
+                                log.error(generator.target)
+                                log.error(ast_unparse(generator.target))
                             raise NotImplementedError(
                                 "Assignment in a multi-name to non-Names"
                             )
@@ -1499,13 +1502,12 @@ class RandomCodeSource(object):
         result = the_sauce(self.gen, starter_home)
 
         # Five retries
-        # TODO(buck): Recursion: keep track of parents (maybe hash parents?), don't swap for a parent
         for i in range(3):
             try:
                 text_result = ast_unparse(result)
                 return text_result
             except RecursionError as re:
-                log.warning("Infinite Recursion suspected in result")
+                log.error("Infinite Recursion suspected in result")
 
         raise ValueError("Random code generation caused a cycle")
 
