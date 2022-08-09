@@ -663,7 +663,7 @@ def nested_unpack(element, top_level=None):
                 log.warning(ast_unparse(element))
                 log.warning(element.keywords)
                 log.warning(ast_unparse(element.keywords))
-                1 / 0
+                raise NotImplementedError('ClassDef with keywords')
 
         return list(flattened_ClassDef())
     elif isinstance(element, FunctionDef):
@@ -734,7 +734,7 @@ def nested_unpack(element, top_level=None):
             log.warning(ast_unparse(element))
             log.warning(element.cause)
             log.warning(ast_unparse(element.cause))
-            1 / 0
+            raise NotImplementedError('Raise with a cause')
         return nested_unpack(element.exc)
     elif isinstance(element, Delete):
 
@@ -792,7 +792,7 @@ def nested_unpack(element, top_level=None):
             log.warning(element._fields)
         except AttributeError:
             pass
-        1 / 0
+        raise NotImplementedError('nested_unpack: Element %s' % (type(element),))
 
 
 def littering(name, to_name):
@@ -857,6 +857,7 @@ class RandomizingTransformer(NodeTransformer):
         )
         for k in __builtins__:
             self.scope[k] = "builtin"
+        self.scope = self.scope.new_child()
 
         self.out_of_scope = set()
 
@@ -979,10 +980,6 @@ class RandomizingTransformer(NodeTransformer):
 
             return True
 
-            # TODO(buck): Either overwrite Load/etc context ctx
-            # TODO(buck): Or match on Load/etc context ctx
-            1 / 0
-
         names_to_check = nested_unpack(proposed_swap, proposed_swap)
         for name in names_to_check:
             if name not in self.scope:
@@ -1037,16 +1034,14 @@ class RandomizingTransformer(NodeTransformer):
                     if arg.annotation is not None:
                         type_ = arg.annotation.id
                     elif arg.type_comment is not None:
-                        # TODO(buck): check this code path
                         type_ = arg.type_comment.id
-                        1 / 0
+                        raise NotImplementedError('arg evaluation with a type comment')
                     self.scope[arg.arg] = type_
                     log.debug("scope gains value %s from arg - arguments" % (arg.arg,))
                     if arg.annotation is not None or arg.type_comment is not None:
                         log.debug(self.depth_padding() + "arguments - Typed Scope")
                         log.debug(self.depth_padding() + str(self.scope))
                 log.warning("_visit_X for arguments")
-                1 / 0
 
             result = self._post_visit(swapout)
 
@@ -1188,8 +1183,7 @@ class RandomizingTransformer(NodeTransformer):
                     if isinstance(vars_to_scope, Name):
                         self.scope[vars_to_scope.id] = type_
                     else:
-                        # TODO(buck) handle other allowed assignment contexts later
-                        1 / 0
+                        raise NotImplementedError('Non-Name Assignment in With')
             return swapout
 
         return self._visit_impl(
@@ -1272,7 +1266,7 @@ class RandomizingTransformer(NodeTransformer):
             print(ast_unparse(node_))
             for idx, key in enumerate(node_.keywords):
                 print(idx, ast_unparse(key))
-            1 / 0
+            raise NotImplementedError('ClassDef with keywords')
 
         return self._visit_impl(
             node_,
@@ -1356,14 +1350,6 @@ class RandomizingTransformer(NodeTransformer):
                     if getattr(swapout, field) is not None:
                         # TODO(buck): Types instead of Any
                         type_ = "Any"
-                        # if swapout.annotation is not None:
-                        #     type_ = swapout.annotation.id
-                        # elif swapout.type_comment is not None:
-                        #     # TODO(buck): check this code path
-                        #     type_ = swapout.type_comment.id
-                        #     1 / 0
-                        # self.scope[swapout.arg] = type_
-                        # log.debug("scope gains value %s from arg" % (swapout.arg,))
                         self.scope[getattr(swapout, field)] = type_
                 elif field_type == "multi-visit":
                     for i in range(len(getattr(swapout, field))):
