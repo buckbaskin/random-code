@@ -247,7 +247,7 @@ def test_For_body():
 for x in [1, 2, 3]:
     name(x)"""
     )
-    assert ["name"] == nested_unpack(ast)
+    assert ["name", "x"] == nested_unpack(ast)
 
 
 # FormattedValue

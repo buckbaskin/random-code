@@ -149,8 +149,6 @@ class NotNameParent(ABC):
         "Constant",
         "Import",
         "ImportFrom",
-        # TODO(buck): check JoinedStr
-        "JoinedStr",
         "NoneType",
         "Pass",
     }
@@ -528,6 +526,14 @@ def nested_unpack(element, top_level=None):
         or isinstance(element, Starred)
     ):
         return nested_unpack(element.value, top_level)
+    elif isinstance(element, JoinedStr):
+
+        def flattened_JoinedStr():
+            for expr in element.values:
+                for eid in nested_unpack(expr, top_level):
+                    yield eid
+
+        return list(flattened_JoinedStr())
     elif isinstance(element, Subscript):
         return nested_unpack(element.value, top_level) + nested_unpack(
             element.slice, top_level
@@ -698,13 +704,24 @@ def nested_unpack(element, top_level=None):
             for expr in element.body:
                 for eid in nested_unpack(expr, top_level):
                     yield eid
+            for excepthandler in element.handlers:
+                for eid in nested_unpack(excepthandler, top_level):
+                    yield eid
 
         return list(flattened_Try())
     elif isinstance(element, Assert):
         # Note: structurally like if
         return nested_unpack(element.test, top_level)
     elif isinstance(element, For):
-        return nested_unpack(element.iter, top_level)
+
+        def flattened_For():
+            for iid in nested_unpack(element.iter, top_level):
+                yield iid
+            for stmt in element.body:
+                for sid in nested_unpack(stmt):
+                    yield sid
+
+        return list(flattened_For())
     elif isinstance(element, List) or isinstance(element, Tuple):
 
         def flattened_List():
@@ -730,9 +747,7 @@ def nested_unpack(element, top_level=None):
 
         return list(flattened_Delete())
     elif isinstance(element, FormattedValue):
-        # TODO(buck): Revisit FormattedValue expansion
-        log.debug("Ending with no elements: %s" % (type(element)))
-        return []
+        return nested_unpack(element.value)
     elif isinstance(element, ExceptHandler):
 
         def flattened_ExceptHandler():
