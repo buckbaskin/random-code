@@ -528,10 +528,6 @@ def nested_unpack(element, top_level=None):
         # Note: arguments may define names in body
         # return nested_unpack(element.body, top_level)
         return []
-    elif isinstance(element, Tuple):
-        log.debug("Ending with no elements: %s" % (type(element)))
-        # TODO(buck): check underlying
-        return []
     elif (
         isinstance(element, If)
         or isinstance(element, IfExp)
@@ -688,7 +684,7 @@ def nested_unpack(element, top_level=None):
         return nested_unpack(element.test, top_level)
     elif isinstance(element, For):
         return nested_unpack(element.iter, top_level)
-    elif isinstance(element, List):
+    elif isinstance(element, List) or isinstance(element, Tuple):
 
         def flattened_List():
             for elem in element.elts:
