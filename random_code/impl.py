@@ -494,6 +494,24 @@ def contains_return(element, top_level=None):
     return False
 
 
+def args_to_names(arguments):
+    args = [
+        *arguments.posonlyargs,
+        *arguments.args,
+        *arguments.kwonlyargs,
+    ]
+    if arguments.vararg is not None:
+        log.warning("arguments.vararg")
+        log.warning(arguments.vararg)
+        log.warning(ast_unparse(arguments.vararg))
+        # TODO(add to list of args)
+        1 / 0
+        args.append(arguments.vararg)
+    if arguments.kwarg is not None:
+        args.append(arguments.kwarg)
+    return args
+
+
 def nested_unpack(element, top_level=None):
     assert not isinstance(element, list)
 
@@ -525,9 +543,9 @@ def nested_unpack(element, top_level=None):
 
         return list(flattened_Call())
     elif isinstance(element, Lambda):
-        # Note: arguments may define names in body
-        # return nested_unpack(element.body, top_level)
-        return []
+        arg_names = set(args_to_names(element.args))
+        body_names = set(nested_unpack(element.body, top_level))
+        return [name for name in body_names - arg_names]
     elif (
         isinstance(element, If)
         or isinstance(element, IfExp)
@@ -952,23 +970,6 @@ class RandomizingTransformer(NodeTransformer):
                 )
                 return False
         return True
-
-    def args_to_names(self, arguments):
-        args = [
-            *arguments.posonlyargs,
-            *arguments.args,
-            *arguments.kwonlyargs,
-        ]
-        if arguments.vararg is not None:
-            log.warning(self.depth_padding() + "arguments.vararg")
-            log.warning(self.depth_padding() + arguments.vararg)
-            log.warning(self.depth_padding() + ast_unparse(arguments.vararg))
-            # TODO(add to list of args)
-            1 / 0
-            args.append(arguments.vararg)
-        if arguments.kwarg is not None:
-            args.append(arguments.kwarg)
-        return args
 
     def _helper_function_factory(self, node_name):
         @littering("scope", "_ending_scope")
