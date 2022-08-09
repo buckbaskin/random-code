@@ -526,9 +526,12 @@ def nested_unpack(element, top_level=None):
         isinstance(element, Attribute)
         or isinstance(element, Index)
         or isinstance(element, Starred)
-        or isinstance(element, Subscript)
     ):
         return nested_unpack(element.value, top_level)
+    elif isinstance(element, Subscript):
+        return nested_unpack(element.value, top_level) + nested_unpack(
+            element.slice, top_level
+        )
     elif isinstance(element, Call):
 
         def flattened_Call():
