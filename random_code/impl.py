@@ -663,7 +663,7 @@ def nested_unpack(element, top_level=None):
                 log.warning(ast_unparse(element))
                 log.warning(element.keywords)
                 log.warning(ast_unparse(element.keywords))
-                raise NotImplementedError('ClassDef with keywords')
+                raise NotImplementedError("ClassDef with keywords")
 
         return list(flattened_ClassDef())
     elif isinstance(element, FunctionDef):
@@ -734,7 +734,7 @@ def nested_unpack(element, top_level=None):
             log.warning(ast_unparse(element))
             log.warning(element.cause)
             log.warning(ast_unparse(element.cause))
-            raise NotImplementedError('Raise with a cause')
+            raise NotImplementedError("Raise with a cause")
         return nested_unpack(element.exc)
     elif isinstance(element, Delete):
 
@@ -792,7 +792,7 @@ def nested_unpack(element, top_level=None):
             log.warning(element._fields)
         except AttributeError:
             pass
-        raise NotImplementedError('nested_unpack: Element %s' % (type(element),))
+        raise NotImplementedError("nested_unpack: Element %s" % (type(element),))
 
 
 def littering(name, to_name):
@@ -801,6 +801,7 @@ def littering(name, to_name):
 
     For example, used to append the scope to each member of the AST to enable asserting on scope properties in testing
     """
+
     def wrapper(func):
         @wraps(func)
         def wrapped(self, *args, **kwargs):
@@ -836,12 +837,60 @@ def depth_protection(
     return wrapped
 
 
+class RecursionCheckerVisitor(NodeVisitor):
+    def __init__(self, max_depth=10000):
+        self.visited = set()
+        self.depth = 0
+        self.max_depth = max_depth
+
+    def generic_visit(self, node):
+        self.depth += 1
+
+        node_type = type(node)
+        node_id = id(node)
+        log.debug("%s|-- Visiting %s %s", " " * self.depth, node_type, node_id)
+
+        if (node_type, node_id) in self.visited:
+            log.debug("%s|-- Loop Visiting %s %s", " " * self.depth, node_type, node_id)
+            raise RecursionError(
+                "RecursionCheckerVisitor: Visited the same node twice in a tree"
+            )
+
+        if self.depth > self.max_depth:
+            log.debug(
+                "%s|-- Loop Depth Reached %d %s %s",
+                " " * self.depth,
+                self.depth,
+                node_type,
+                node_id,
+            )
+            return
+
+        self.visited.add((node_type, node_id))
+
+        NodeVisitor.generic_visit(self, node)
+
+        self.depth -= 1
+
+
+def loop_detection(ast):
+    checker = RecursionCheckerVisitor()
+    try:
+        checker.visit(ast)
+    except RecursionError as re:
+        log.debug("loop_detection: %s", re)
+        return True
+    return False
+
+
 class RandomizingTransformer(NodeTransformer):
-    def __init__(self, corpus, *, log_level=None):
+    def __init__(self, corpus, *, log_level=None, visit_only=False):
         if log_level is not None:
             log.setLevel(log_level)
 
         self.corpus = corpus
+
+        self.visit_only = visit_only
 
         self.depth = 0
         self.max_depth = 10
@@ -878,7 +927,11 @@ class RandomizingTransformer(NodeTransformer):
         return " " * self.depth
 
     def valid_swap(self, node_, proposed_swap):
+        log.debug("valid_swap: %s for %s", str(node_), str(proposed_swap))
         assert type(node_) == type(proposed_swap)
+
+        if loop_detection(proposed_swap):
+            return False
 
         node_type = type(node_).__name__
         new_definitions = ["Module", "arguments"]
@@ -1010,6 +1063,8 @@ class RandomizingTransformer(NodeTransformer):
             ]
 
             for swapout in getattr(self.corpus, node_name)():
+                if self.visit_only:
+                    continue
                 if self.valid_swap(node_, swapout):
                     # Let python scoping drop this variable
                     break
@@ -1023,18 +1078,18 @@ class RandomizingTransformer(NodeTransformer):
                     self.depth_padding()
                     + "Swapped arguments in Scope %s for %s"
                     % (
-                        [a.arg for a in self.args_to_names(node_)],
-                        [a.arg for a in self.args_to_names(swapout)],
+                        [a.arg for a in args_to_names(node_)],
+                        [a.arg for a in args_to_names(swapout)],
                     )
                 )
 
-                for arg in self.args_to_names(swapout):
+                for arg in args_to_names(swapout):
                     type_ = "Any"
                     if arg.annotation is not None:
                         type_ = arg.annotation.id
                     elif arg.type_comment is not None:
                         type_ = arg.type_comment.id
-                        raise NotImplementedError('arg evaluation with a type comment')
+                        raise NotImplementedError("arg evaluation with a type comment")
                     self.scope[arg.arg] = type_
                     log.debug("scope gains value %s from arg - arguments" % (arg.arg,))
                     if arg.annotation is not None or arg.type_comment is not None:
@@ -1101,7 +1156,9 @@ class RandomizingTransformer(NodeTransformer):
         return partial(_visit_X_ignore, self)
 
     def _post_visit(self, node):
-        log.debug(self.depth_padding() + type(node).__name__ + " " + str(self.scope.maps[:-1]))
+        log.debug(
+            self.depth_padding() + type(node).__name__ + " " + str(self.scope.maps[:-1])
+        )
 
         result = NodeTransformer.generic_visit(self, node)
         assert result is not None
@@ -1182,7 +1239,7 @@ class RandomizingTransformer(NodeTransformer):
                     if isinstance(vars_to_scope, Name):
                         self.scope[vars_to_scope.id] = type_
                     else:
-                        raise NotImplementedError('Non-Name Assignment in With')
+                        raise NotImplementedError("Non-Name Assignment in With")
             return swapout
 
         return self._visit_impl(
@@ -1217,10 +1274,15 @@ class RandomizingTransformer(NodeTransformer):
 
         def custom_scope_processor_KV(swapout):
             for member in keys_and_values:
+                log.warning(
+                    "custom_scope_processor_KV: %s %s",
+                    member,
+                    ast_unparse(getattr(swapout, member)),
+                )
                 setattr(
                     swapout,
                     member,
-                    NodeTransformer.generic_visit(self, getattr(swapout, member)),
+                    NodeTransformer.visit(self, getattr(swapout, member)),
                 )
                 assert getattr(swapout, member) is not None
                 getattr(swapout, member)._ending_scope = dict(self.scope)
@@ -1265,7 +1327,7 @@ class RandomizingTransformer(NodeTransformer):
             print(ast_unparse(node_))
             for idx, key in enumerate(node_.keywords):
                 print(idx, ast_unparse(key))
-            raise NotImplementedError('ClassDef with keywords')
+            raise NotImplementedError("ClassDef with keywords")
 
         return self._visit_impl(
             node_,

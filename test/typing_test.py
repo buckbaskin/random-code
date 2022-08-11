@@ -1,6 +1,7 @@
 from random_code.impl import merge_unbundled_asts, BagOfConcepts, RandomizingTransformer
 
 from ast import Module, arg, Name
+from collections import ChainMap
 
 
 def _strip_module(ast):
@@ -40,7 +41,7 @@ def y(s: str):
     assert isinstance(swap, arg)
 
     transformer = build_transformer()
-    transformer.scope = {"int": "Type", "str": "Type"}
+    transformer.scope = ChainMap({"int": "Type", "str": "Type"})
 
     assert not transformer.valid_swap(base, swap)
 
@@ -114,7 +115,7 @@ def test_name_typing_in_scope_matching():
     assert isinstance(swap, Name)
 
     transformer = build_transformer()
-    transformer.scope = {"x": "int", "y": "int"}
+    transformer.scope = ChainMap({"x": "int", "y": "int"})
 
     assert transformer.valid_swap(base, swap)
 

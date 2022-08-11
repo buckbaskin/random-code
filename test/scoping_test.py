@@ -1,4 +1,9 @@
-from random_code.impl import merge_unbundled_asts, BagOfConcepts, RandomizingTransformer
+from random_code.impl import (
+    merge_unbundled_asts,
+    BagOfConcepts,
+    RandomizingTransformer,
+    nested_unpack,
+)
 
 from ast import (
     arguments,
@@ -53,12 +58,12 @@ def str_to_ast(s, keep_module=False):
     return _strip_module(ast.parse(s))
 
 
-def build_transformer(ast):
+def build_transformer(ast, seed=0):
     ast_set = {"string": ast}
     raw_materials = merge_unbundled_asts(ast_set.values())
-    gen = BagOfConcepts(raw_materials, seed=0)
+    gen = BagOfConcepts(raw_materials, seed=seed)
 
-    transformer = RandomizingTransformer(corpus=gen, log_level="DEBUG")
+    transformer = RandomizingTransformer(corpus=gen, log_level="DEBUG", visit_only=True)
     return transformer
 
 
@@ -173,9 +178,12 @@ def test_DictComp():
     assert isinstance(result, DictComp)
     print(ast_unparse(result))
     print(ast_unparse(result.key))
+    print(nested_unpack(result.key, result.key))
     print(ast_unparse(result.value))
+    print(nested_unpack(result.value, result.value))
     for idx, gen in enumerate(result.generators):
         print(idx, ast_unparse(gen))
+        print(idx, nested_unpack(gen, gen))
     assert "x" in result.key._ending_scope
 
 
