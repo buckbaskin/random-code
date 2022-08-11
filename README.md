@@ -28,19 +28,9 @@ Generated with script `big_example.py` from hypothesis https://github.com/Hypoth
 ```python
 from hypothesis.utils.conventions import settings
 
-def test_no_single_floats_in_range():
-    range = 10 ** 5
-    DeprecationWarning = 1 + 1j
-    IndexError()
-    with '\n'.join() as frozenset:
-        'Take a value produced by the underlying mapped_strategy and turn it\n\n        into a value suitable for outputting from this strategy.'
-        with float(101):
-            ''.join()
-            min('b')
+def check_invariants(self, argname: str):
+    assert -1.5
 
-def filter(self, imports):
-    self = getattr('9')
-    if isinstance('-inf'):
-        return [k for () in range(super.interesting_examples) if -0.0]
-    return bytes()
+def __repr__(self):
+    return 'hi'
 ```
