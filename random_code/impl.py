@@ -1430,7 +1430,8 @@ class RandomizingTransformer(NodeTransformer):
                             self.scope[generator.target.id] = type_
                         elif isinstance(generator.target, Tuple):
                             for elt in generator.target.elts:
-                                self.scope[elt.id] = type_
+                                if hasattr(elt, "id"):
+                                    self.scope[elt.id] = type_
                         else:
                             log.error(swapout)
                             log.error(ast_unparse(swapout))

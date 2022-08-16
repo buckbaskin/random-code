@@ -7,8 +7,8 @@ from random_code.impl import (
 
 from ast import (
     arguments,
-    ClassDef,
     Assign,
+    ClassDef,
     DictComp,
     ExceptHandler,
     Expr,
@@ -17,12 +17,16 @@ from ast import (
     IfExp,
     Lambda,
     ListComp,
+    ListComp,
     Module,
+    Name,
     SetComp,
     Try,
+    Tuple,
     With,
 )
 from ast import fix_missing_locations, NodeVisitor
+from collections import ChainMap
 
 try:
     # python3.9 and after
@@ -58,12 +62,14 @@ def str_to_ast(s, keep_module=False):
     return _strip_module(ast.parse(s))
 
 
-def build_transformer(ast, seed=0):
+def build_transformer(ast, seed=0, visit_only=False):
     ast_set = {"string": ast}
     raw_materials = merge_unbundled_asts(ast_set.values())
     gen = BagOfConcepts(raw_materials, seed=seed)
 
-    transformer = RandomizingTransformer(corpus=gen, log_level="DEBUG")
+    transformer = RandomizingTransformer(
+        corpus=gen, log_level="DEBUG", visit_only=visit_only
+    )
     return transformer
 
 
@@ -87,3 +93,47 @@ def main():
     result = transformer.visit(main_func_def)
 
     assert loop_detection(result)
+
+
+def test_ListComp_elt_swaping():
+    input_text = "[x for x, y in ((1, 'one'), (2, 'two'), (3, 'three'))]"
+
+    list_comp = _strip_expr(str_to_ast(input_text))
+    assert isinstance(list_comp, ListComp)
+
+    transformer = build_transformer(list_comp, visit_only=True)
+
+    result = transformer.visit(list_comp)
+
+    assert "x" in result.elt._ending_scope
+    assert "y" in result.elt._ending_scope
+
+    transformer.scope = ChainMap(result.elt._ending_scope)
+    assert transformer.valid_swap(result.elt, Name("y"))
+
+
+def test_ListComp_generator_names_swaping():
+    input_text = "[x for x, y in ((1, 'one'), (2, 'two'), (3, 'three'))]"
+
+    list_comp = _strip_expr(str_to_ast(input_text))
+    assert isinstance(list_comp, ListComp)
+
+    transformer = build_transformer(list_comp, visit_only=True)
+
+    result = transformer.visit(list_comp)
+
+    print(result._fields)
+    print(ast_unparse(result.elt))
+    for idx, gen in enumerate(result.generators):
+        print(idx, ast_unparse(gen), gen._fields)
+        for f in gen._fields:
+            if isinstance(getattr(gen, f), list):
+                print(f, getattr(gen, f))
+                for idx2, elem in enumerate(getattr(gen, f)):
+                    print("   ", idx2, ast_unparse(elem))
+            elif isinstance(getattr(gen, f), int):
+                print(f, getattr(gen, f))
+            else:
+                print(f, getattr(gen, f), ast_unparse(getattr(gen, f)))
+
+    assert transformer.valid_swap(result.generators[0].target, Tuple([Name("z")]))

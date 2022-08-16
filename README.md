@@ -26,11 +26,13 @@ Generated with script `big_example.py` from hypothesis https://github.com/Hypoth
 
 ### Randomly Generated Source
 ```python
+
 from hypothesis.utils.conventions import settings
 
 def check_invariants(self, argname: str):
-    assert -1.5
+    assert (- 1.5)
 
 def __repr__(self):
     return 'hi'
+
 ```
